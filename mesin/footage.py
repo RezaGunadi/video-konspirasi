@@ -1456,6 +1456,7 @@ def siapkan(k, durasi, batal=None, bagian=0):
 
 
 MAKS_FOTO = 3.0  # detik: foto layar penuh di tata visual "video + stiker" tidak boleh lebih lama dari ini
+MIN_SHOT_VIDEO = 2.6  # detik: potongan klip yang lebih pendek terasa patah-patah
 
 
 def jumlah_shot(durasi, format_video, video=False):
@@ -1464,7 +1465,10 @@ def jumlah_shot(durasi, format_video, video=False):
         maks = 3.5 if format_video == "9:16" else 4.2
     else:
         maks = 5.0 if format_video == "9:16" else 7.0
-    return max(1, math.ceil(durasi / maks - 0.15))
+    n = max(1, math.ceil(durasi / maks - 0.15))
+    if video:  # adegan 4,2 detik di Shorts dulu dibelah 2 x 2,1 detik: terasa patah-patah. Minimal ±2,6 detik.
+        n = max(1, min(n, int(durasi / MIN_SHOT_VIDEO)))
+    return n
 
 
 def maks_bagian(k, durasi_shot):

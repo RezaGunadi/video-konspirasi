@@ -774,19 +774,21 @@ def _kandidat_baru(kand, dipakai, sudah_dipakai, di_adegan_ini):
     return lain[0] if lain else (0 if kand else None)
 
 
-def _bagi_shot(a, total, n):
+def _bagi_shot(a, total, n, minimum=1.5):
     """Bagi adegan jadi n shot. Pergantian gambar diletakkan di jeda antar-kata yang paling dekat dengan
-    pembagian rata (jeda panjang lebih disukai), supaya gambar tidak berganti di tengah kata."""
+    pembagian rata (jeda panjang lebih disukai), supaya gambar tidak berganti di tengah kata. Tiap shot minimal
+    `minimum` detik (selama pembagian rata memungkinkan)."""
     if n <= 1:
         return [total]
     fps = render.FPS
     durasi = total / fps
+    minimum = min(minimum, 0.9 * durasi / n)
     kata = a.get("kata") or []
     calon = [((x["t1"] + y["t0"]) / 2, y["t0"] - x["t1"]) for x, y in zip(kata, kata[1:])]
     batas, lalu = [], 0.0
     for k in range(1, n):
         ideal = durasi * k / n
-        boleh = [c for c in calon if c[0] - lalu >= 1.5 and durasi - c[0] >= 1.5 * (n - k)]
+        boleh = [c for c in calon if c[0] - lalu >= minimum and durasi - c[0] >= minimum * (n - k)]
         t = min(boleh, key=lambda c: abs(c[0] - ideal) - 2 * min(max(c[1], 0), 0.4))[0] if boleh else ideal
         batas.append(t)
         lalu = t
@@ -851,7 +853,7 @@ def _rencana_video(p, a, i, frames_adegan):
     # tanpa klip sama sekali: langsung potongan foto ±2,6 detik (kalau dipotong ±3,5 lalu dibelah, jadi 1,6 detik)
     jumlah = footage.jumlah_shot(a["durasi"], o["format"], video=True) if ada_klip else \
         max(1, math.ceil(a["durasi"] / (footage.MAKS_FOTO - 0.4)))
-    potong = _bagi_shot(a, frames_adegan, jumlah)
+    potong = _bagi_shot(a, frames_adegan, jumlah, minimum=footage.MIN_SHOT_VIDEO if ada_klip else 1.5)
     banding = (a.get("banding") or {}).get("siap")
     if banding and potong[0] - maks_foto >= fps:  # perbandingan 🆚 = dua foto, jadi ikut batas 3 detik
         potong = [maks_foto, potong[0] - maks_foto] + potong[1:]

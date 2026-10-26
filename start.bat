@@ -7,6 +7,10 @@ if %errorlevel%==0 (
   start "" http://localhost:3220
   exit /b
 )
+rem Ambil versi terbaru dari GitHub (semua PC selalu sama). Gagal/offline = jalan dengan versi yang ada.
+if exist ".git" (
+  git pull --ff-only --quiet || echo Update dari GitHub gagal, aplikasi jalan dengan versi lokal.
+)
 start "" /min cmd /c "timeout /t 3 /nobreak >nul & start http://localhost:3220"
 ".venv\Scripts\python.exe" app.py
 pause

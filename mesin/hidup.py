@@ -13,7 +13,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from .alat import CACHE, FFMPEG, NO_WINDOW, Dibatalkan, hash_pendek
+from .alat import CACHE, FFMPEG, HF_CACHE, NO_WINDOW, Dibatalkan, hash_pendek
 
 F_DALAM = CACHE / "kedalaman"
 F_DALAM.mkdir(parents=True, exist_ok=True)
@@ -37,7 +37,7 @@ def tersedia():
 def _muat():
     global _model
     if _model is None:
-        os.environ.setdefault("HF_HOME", r"D:\tools\hf-cache")
+        os.environ.setdefault("HF_HOME", str(HF_CACHE))
         import torch
         from transformers import AutoImageProcessor, AutoModelForDepthEstimation
         torch.set_num_threads(max(2, (os.cpu_count() or 4) // 2))

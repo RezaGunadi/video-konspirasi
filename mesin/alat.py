@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -21,9 +22,50 @@ PUBLIC = AKAR / "public"
 for _d in (DATA, PROYEK, CACHE, OUTPUT, INPUT, MUSIK):
     _d.mkdir(parents=True, exist_ok=True)
 
-FFMPEG_DIR = Path(os.environ.get("FFMPEG_DIR", r"D:\tools\ffmpeg\bin"))
+WINDOWS = os.name == "nt"
+# Laptop (Windows): alat & model di D:\tools. Mini PC (Linux): ~/tools. Bisa diganti lewat VIDEO_AI_TOOLS.
+TOOLS = Path(os.environ.get("VIDEO_AI_TOOLS") or (r"D:\tools" if WINDOWS else Path.home() / "tools"))
+HF_CACHE = Path(os.environ.get("HF_CACHE_DIR") or TOOLS / "hf-cache")  # model Whisper & kedalaman
+FFMPEG_DIR = Path(os.environ.get("FFMPEG_DIR") or TOOLS / "ffmpeg" / "bin")
 FFMPEG = str(FFMPEG_DIR / "ffmpeg.exe") if (FFMPEG_DIR / "ffmpeg.exe").exists() else "ffmpeg"
 FFPROBE = str(FFMPEG_DIR / "ffprobe.exe") if (FFMPEG_DIR / "ffprobe.exe").exists() else "ffprobe"
+
+
+def peramban():
+    """Edge (Windows) atau Chromium/Chrome/Edge (Linux) untuk mode headless; "" kalau tidak ada."""
+    if WINDOWS:
+        edge = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+        return edge if os.path.exists(edge) else ""
+    return next((p for p in map(shutil.which, ("microsoft-edge", "chromium", "chromium-browser", "google-chrome"))
+                 if p), "")
+
+
+# Font huruf tebal untuk teks di gambar (Pillow & ffmpeg drawtext). Linux: paket ttf-mscorefonts-installer atau
+# salinan font di ~/.local/share/fonts; kalau tidak ada, DejaVu Sans Bold.
+_FONT = {"impact": ("impact.ttf",), "arialbd": ("arialbd.ttf", "arial_bold.ttf"),
+         "ariblk": ("ariblk.ttf", "arial_black.ttf")}
+_FOLDER_FONT = [Path(r"C:\Windows\Fonts")] if WINDOWS else [
+    Path.home() / ".local/share/fonts", Path.home() / ".fonts", Path("/usr/share/fonts/truetype/msttcorefonts"),
+    Path("/usr/share/fonts")]
+
+
+def font(nama):
+    """Path file font (misalnya "impact") di OS ini."""
+    dicari = {x.lower() for x in _FONT.get(nama, (f"{nama}.ttf",))}
+    for folder in _FOLDER_FONT:
+        if folder.is_dir():
+            for f in folder.rglob("*.ttf"):
+                if f.name.lower() in dicari:
+                    return str(f)
+    for f in (Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),):
+        if f.exists():
+            return str(f)
+    return str(_FOLDER_FONT[0] / next(iter(dicari)))
+
+
+def font_ffmpeg(nama):
+    """Path font untuk opsi fontfile ffmpeg (titik dua di "C:/" harus di-escape)."""
+    return font(nama).replace("\\", "/").replace(":", "\\:")
 
 UA = "VideoKonspirasiAI/1.0 (aplikasi desktop pribadi; python-requests)"
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -160,7 +202,7 @@ def http_get(url, **kw):
     return r
 
 
-CURL = r"C:\Windows\System32\curl.exe"
+CURL = r"C:\Windows\System32\curl.exe" if WINDOWS else (shutil.which("curl") or "")
 
 
 def _unduh_curl(url, sementara, batas_mb, batal, headers):

@@ -1,4 +1,5 @@
 """Video Konspirasi AI — server lokal (http://localhost:3220)."""
+import ipaddress
 import json
 import os
 import shutil
@@ -12,6 +13,19 @@ from mesin.alat import DATA, FFMPEG, MUSIK, PROYEK, PUBLIC, INPUT, OUTPUT, slug
 
 PORT = int(os.environ.get("PORT", 3220))
 HOST_OK = {f"localhost:{PORT}", f"127.0.0.1:{PORT}"}
+# Mini PC (pekerja di LAN): UI & API boleh dibuka dari laptop lewat alamat jaringan lokal (192.168.x.x dsb.).
+LAN = os.environ.get("VIDEO_AI_LAN") == "1"
+
+
+def _host_boleh(host):
+    if host in HOST_OK:
+        return True
+    if not LAN:
+        return False
+    try:
+        return ipaddress.ip_address(host.rsplit(":", 1)[0]).is_private
+    except ValueError:
+        return False
 
 app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 4 * 1024 * 1024 * 1024  # video panjang untuk mode Re-create
@@ -24,10 +38,10 @@ SUMBER = DATA / "sumber"  # video sumber yang diupload untuk mode Re-create
 @app.before_request
 def jaga():
     # Hanya untuk laptop ini: tolak Host/Origin asing (mencegah situs lain memanggil API lewat browser).
-    if request.host not in HOST_OK:
+    if not _host_boleh(request.host):
         abort(403)
     asal = request.headers.get("Origin")
-    if asal and asal.split("://", 1)[-1] not in HOST_OK:
+    if asal and not _host_boleh(asal.split("://", 1)[-1]):
         abort(403)
 
 
@@ -198,7 +212,7 @@ def aksi(pid, aksi):
         p = proyek.detail(pid) or {}
         folder = (p.get("hasil") or {}).get("folder")
         if folder and Path(folder).exists():
-            os.startfile(folder)
+            _buka(folder)
     else:
         abort(404)
     return jsonify(ok=True)
@@ -253,14 +267,20 @@ def buka_folder(nama):
     folder = {"input": INPUT, "output": OUTPUT, "musik": MUSIK}.get(nama)
     if not folder:
         abort(404)
-    os.startfile(folder)
+    _buka(folder)
     return jsonify(ok=True)
+
+
+def _buka(folder):
+    """Buka folder di Explorer (Windows). Di mini PC Linux tanpa layar: tidak melakukan apa-apa."""
+    if hasattr(os, "startfile"):
+        os.startfile(folder)
 
 
 if __name__ == "__main__":
     if not shutil.which(FFMPEG) and not Path(FFMPEG).exists():
-        print("ffmpeg tidak ditemukan di D:\\tools\\ffmpeg\\bin", file=sys.stderr)
+        print(f"ffmpeg tidak ditemukan ({FFMPEG})", file=sys.stderr)
     proyek.mulai_pekerja()
-    print(f"Video Konspirasi AI jalan di http://localhost:{PORT}")
+    print(f"Video Konspirasi AI jalan di http://localhost:{PORT}" + (" (juga bisa dibuka dari LAN)" if LAN else ""))
     from waitress import serve
-    serve(app, host="127.0.0.1", port=PORT, threads=8)
+    serve(app, host="0.0.0.0" if LAN else "127.0.0.1", port=PORT, threads=8)

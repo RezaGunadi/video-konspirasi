@@ -11,7 +11,6 @@ import base64
 import html
 import json
 import math
-import os
 import re
 import subprocess
 import tempfile
@@ -23,7 +22,7 @@ from urllib.parse import unquote, urlencode
 import requests
 
 from . import ollama
-from .alat import CACHE, baca_json, ffmpeg, hash_pendek, http_get, probe, tulis_json, unduh
+from .alat import CACHE, baca_json, ffmpeg, font_ffmpeg, hash_pendek, http_get, peramban, probe, tulis_json, unduh
 
 F_CARI = CACHE / "cari"
 F_ASET = CACHE / "aset"
@@ -564,7 +563,7 @@ def europeana(q):
     return _cache(f"europeana|{q}", f)
 
 
-EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+EDGE = peramban()  # Edge di Windows; Chromium/Chrome di Linux ("" = tidak ada)
 # Foto stok ber-watermark dan media sosial yang butuh login: tidak dipakai.
 _WEB_LEWAT = re.compile(r"alamy|dreamstime|shutterstock|gettyimages|istockphoto|123rf|depositphotos|stock\.adobe|"
                         r"adobestock|vecteezy|freepik|canstockphoto|bigstock|pond5|agefotostock|facebook|fbcdn|"
@@ -577,7 +576,7 @@ def web_bing(q, lisensi=False):
     selama free"). Tiap kueri memakai profil browser baru — dengan profil yang sama, kueri kedua dan seterusnya
     diberi hasil acak (kue keju untuk "situs Gunung Padang"). lisensi=True: filter Bing "bebas diubah, dibagikan,
     dan dipakai komersial". Tanpa filter, hak cipta gambar milik pemiliknya masing-masing."""
-    if not os.path.exists(EDGE):
+    if not EDGE:
         return []
 
     def f():
@@ -925,7 +924,7 @@ SCHEMA_SKOR = {
     "required": ["foto"],
 }
 POSISI = ["kiri atas", "kanan atas", "kiri bawah", "kanan bawah"]
-FONT_ANGKA = "C\\:/Windows/Fonts/arialbd.ttf"
+FONT_ANGKA = font_ffmpeg("arialbd")
 
 
 # Foto yang bukan peristiwa/benda ASLINYA (dipakai juri AI dan perbandingan "satu foto, dua dunia").

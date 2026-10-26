@@ -45,10 +45,11 @@ _whisper = None
 def _model_whisper():
     global _whisper
     if _whisper is None:
-        os.environ.setdefault("HF_HOME", r"D:\tools\hf-cache")
+        from .alat import HF_CACHE
+        os.environ.setdefault("HF_HOME", str(HF_CACHE))
         from faster_whisper import WhisperModel
         _whisper = WhisperModel("small", device="cpu", compute_type="int8",
-                                download_root=r"D:\tools\hf-cache\whisper")
+                                download_root=str(HF_CACHE / "whisper"))
     return _whisper
 
 

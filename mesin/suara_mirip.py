@@ -5,14 +5,15 @@ model di checkpoints_v2/converter. Hanya bagian konverter yang dipakai (tanpa TT
 watermark), dijalankan di CPU supaya tidak berebut memori GPU dengan Ollama.
 Dipakai HANYA kalau pengguna menyatakan video & suara sumbernya milik sendiri atau sudah ada izin.
 """
+import os
 import subprocess
 import sys
 import threading
 from pathlib import Path
 
-from .alat import CACHE, FFMPEG, hash_pendek
+from .alat import CACHE, FFMPEG, TOOLS, hash_pendek
 
-OPENVOICE = Path(r"D:\tools\openvoice")
+OPENVOICE = Path(os.environ.get("OPENVOICE_DIR") or TOOLS / "openvoice")
 _CKPT = OPENVOICE / "checkpoints_v2" / "converter" / "checkpoint.pth"
 _CFG = OPENVOICE / "checkpoints_v2" / "converter" / "config.json"
 FOLDER = CACHE / "suara-mirip"

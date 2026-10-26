@@ -9,11 +9,11 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from .alat import AKAR
+from .alat import AKAR, peramban
 
 FOLDER = AKAR / "maskot"
 POSE = ("melambai", "kaget", "mikir", "nunjuk", "senang")
-EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+EDGE = peramban()  # hanya untuk merender ulang SVG; PNG-nya sudah ada di repo
 UKURAN = 600
 
 GARIS = "#1B2A41"
@@ -159,7 +159,7 @@ def _render(svg, tujuan):
         html.write_text(f'<!doctype html><html><body style="margin:0;background:transparent;overflow:hidden">'
                         f'{svg}</body></html>', encoding="utf-8")
         subprocess.run([EDGE, "--headless=new", "--disable-gpu", "--no-first-run", "--hide-scrollbars",
-                        f"--user-data-dir={tmp}\\profil", "--default-background-color=00000000",
+                        f"--user-data-dir={os.path.join(tmp, 'profil')}", "--default-background-color=00000000",
                         f"--window-size={UKURAN},{UKURAN}", f"--screenshot={tujuan}", html.as_uri()],
                        capture_output=True, timeout=90)
     if not Path(tujuan).exists():
@@ -188,4 +188,4 @@ def siapkan(paksa=False):
 
 
 def tersedia():
-    return os.path.exists(EDGE) or all((FOLDER / f"{p}.png").exists() for p in (*POSE, "logo"))
+    return bool(EDGE) or all((FOLDER / f"{p}.png").exists() for p in (*POSE, "logo"))

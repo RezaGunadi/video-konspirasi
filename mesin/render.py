@@ -3,7 +3,7 @@ import random
 import re
 from pathlib import Path
 
-from .alat import CACHE, FFMPEG, FFPROBE, MUSIK, ffmpeg, jalankan
+from .alat import CACHE, FFMPEG, FFPROBE, MUSIK, ffmpeg, font, font_ffmpeg, jalankan
 
 FPS = 30
 GESER_KATA = 0.1  # detik, lihat tulis_subtitle
@@ -131,7 +131,6 @@ def _terangkan(bahan):
 # Skala stiker per frame saat muncul (±0,27 detik): membesar melewati ukuran akhir lalu memantul balik ("meletup").
 _POP_STIKER = (0.5, 0.78, 1.0, 1.1, 1.12, 1.07, 1.02, 1.0)
 _SUDUT_STIKER = (-4.0, 3.0, -2.5, 4.5, -3.5, 2.0)
-_FONT_LABEL = r"C:\Windows\Fonts\impact.ttf"
 
 
 def buat_stiker(sumber, label, format_video, nomor, folder):
@@ -157,15 +156,15 @@ def buat_stiker(sumber, label, format_video, nomor, folder):
         ukuran = round(W * (0.045 if tegak else 0.024))
         lebar_maks = kartu.width - 3 * tepi
         while True:  # kecilkan huruf sampai label muat di lebar foto
-            font = ImageFont.truetype(_FONT_LABEL, ukuran)
-            lebar_teks = ImageDraw.Draw(kartu).textlength(label, font=font)
+            huruf = ImageFont.truetype(font("impact"), ukuran)
+            lebar_teks = ImageDraw.Draw(kartu).textlength(label, font=huruf)
             if lebar_teks + ukuran <= lebar_maks or ukuran <= 22:
                 break
             ukuran -= 2
-        kotak = font.getbbox(label)
+        kotak = huruf.getbbox(label)
         pad = round(ukuran * 0.35)
         tag = Image.new("RGBA", (int(lebar_teks) + 2 * pad, kotak[3] - kotak[1] + 2 * pad), (245, 197, 24, 255))
-        ImageDraw.Draw(tag).text((pad - kotak[0], pad - kotak[1]), label, font=font, fill=(10, 10, 10, 255))
+        ImageDraw.Draw(tag).text((pad - kotak[0], pad - kotak[1]), label, font=huruf, fill=(10, 10, 10, 255))
         gabung = Image.new("RGBA", (kartu.width, kartu.height + tag.height // 2), (0, 0, 0, 0))
         gabung.alpha_composite(kartu, (0, 0))
         gabung.alpha_composite(tag, (2 * tepi, kartu.height - tag.height // 2))
@@ -303,7 +302,7 @@ def buat_shot_banding(kiri, kanan, label_kiri, label_kanan, frames, format_video
     folder = tujuan.parent
     for nama, teks in (("kiri", label_kiri), ("kanan", label_kanan), ("tengah", "MIRIP?")):
         (folder / f"{tujuan.stem}.{nama}.txt").write_text(teks or " ", encoding="utf-8")
-    font = "C\\:/Windows/Fonts/impact.ttf"
+    font = font_ffmpeg("impact")
 
     def panel(i, z0, z1):
         return (f"[{i}:v]scale={pw * 2}:{ph * 2}:force_original_aspect_ratio=increase,crop={pw * 2}:{ph * 2},"
@@ -595,7 +594,7 @@ def thumbnail(kerja, gambar, teks, format_video, tujuan):
     if teks:
         # Shorts: teks di sepertiga atas (bagian bawah tertutup tombol aplikasi).
         ukuran, y = (150, f"h-text_h-{int(H * 0.08)}") if format_video == "16:9" else (120, str(int(H * 0.2)))
-        vf += (f",drawtext=fontfile='C\\:/Windows/Fonts/impact.ttf':textfile=teks_thumb.txt:fontsize={ukuran}:"
+        vf += (f",drawtext=fontfile='{font_ffmpeg('impact')}':textfile=teks_thumb.txt:fontsize={ukuran}:"
                f"fontcolor=yellow:borderw=10:bordercolor=black:x=(w-text_w)/2:y={y}")
     ffmpeg(["-i", str(gambar), "-frames:v", "1", "-vf", vf, "-q:v", "2", str(Path(tujuan).resolve())],
            timeout=120, cwd=str(kerja))

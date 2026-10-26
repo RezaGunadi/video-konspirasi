@@ -242,6 +242,7 @@ def bacakan(teks, suara, kecepatan, nada, batal=None):
 # ---------------------------------------------------------------- suara lebih manusiawi
 
 _BALIK = {"tapi", "namun", "ternyata", "padahal", "faktanya", "justru", "bahkan", "anehnya", "masalahnya", "nah"}
+JEDA_AWAL = 0.35  # detik hening sebelum kata pertama narasi
 # Rantai "mikrofon": potong dengung rendah, sedikit hangat, presence, de-esser, kompresi halus, dan gema ruangan
 # kecil — TTS yang kering terdengar seperti suara sintetis; sedikit ruang membuatnya terdengar seperti rekaman.
 _RANTAI = ("highpass=f=70,bass=g=1.5:f=160:w=0.7,equalizer=f=3200:t=q:w=1.0:g=1.2,deesser=i=0.3,"
@@ -301,7 +302,7 @@ def manusiawikan(mp3, kata, naskah, batal=None):
     import numpy as np
     import soundfile as sf
     from .alat import FFMPEG, NO_WINDOW
-    kunci = hash_pendek(json.dumps([str(mp3), Path(mp3).stat().st_size, naskah, _RANTAI, 2]))
+    kunci = hash_pendek(json.dumps([str(mp3), Path(mp3).stat().st_size, naskah, _RANTAI, 3]))
     wav, meta = FOLDER / f"{kunci}-alami.wav", FOLDER / f"{kunci}-alami.json"
     if wav.exists() and meta.exists():
         return str(wav), json.loads(meta.read_text(encoding="utf-8"))
@@ -315,7 +316,10 @@ def manusiawikan(mp3, kata, naskah, batal=None):
     ambang = max(0.004, float(np.median(rms[rms > np.percentile(rms, 30)])) * 0.08)
     tanda = _batas_kalimat(naskah, kata)
     acak = random.Random(kunci)
-    potongan, geser, kursor, panjang_kalimat = [], [], 0, 0  # geser: (detik_asal, selisih)
+    # Jeda singkat sebelum kata pertama: tanpa ini kata pertama bertabrakan dengan dentuman pembuka & fade-in video
+    # dan terdengar "terpotong" di awal naskah.
+    awal = np.zeros(int(JEDA_AWAL * sr), np.float32)
+    potongan, geser, kursor, panjang_kalimat = [awal], [(-1.0, JEDA_AWAL)], 0, 0  # geser: (detik_asal, selisih)
     for i in range(len(kata) - 1):
         if batal and i % 200 == 0:
             batal.cek()
@@ -349,12 +353,16 @@ def manusiawikan(mp3, kata, naskah, batal=None):
         if abs(selisih) < 0.04:
             continue
         tengah = int((a + (s0 + s1) / 2) * win)  # sampel di tengah hening
-        potongan.append(x[kursor:tengah])
         if selisih > 0:
-            potongan.append(np.zeros(int(selisih * sr), np.float32))
+            potongan += [x[kursor:tengah], np.zeros(int(selisih * sr), np.float32)]
             kursor = tengah
         else:
-            kursor = tengah + int(-selisih * sr)
+            # Dipotong SIMETRIS di tengah hening (sisa ≥125 ms di kiri & kanan). Dulu dipotong dari tengah ke kanan
+            # sepanjang selisihnya: jeda Ardi ±1,1 detik yang dipendekkan ke ±0,4 detik ikut memakan 0,05-0,2 detik
+            # awal kata berikutnya, sehingga awal kalimat/paragraf terdengar terpotong atau melompat.
+            setengah = int(-selisih * sr / 2)
+            potongan.append(x[kursor:tengah - setengah])
+            kursor = tengah + setengah
         geser.append((tengah / sr, selisih))
     potongan.append(x[kursor:])
     y = np.concatenate(potongan) if potongan else x

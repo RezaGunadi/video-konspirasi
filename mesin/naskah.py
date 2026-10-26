@@ -686,8 +686,9 @@ SCHEMA_CARI = {
                 "type": "object",
                 "properties": {"no": {"type": "integer"}, "a": {"type": "string"}, "b": {"type": "string"},
                                "c": {"type": "string"}, "lihat": {"type": "string"}, "subjek": {"type": "string"},
-                               "teks_layar": {"type": "string"}},
-                "required": ["no", "a", "b", "c", "lihat", "subjek", "teks_layar"],
+                               "teks_layar": {"type": "string"}, "analogi": {"type": "string"},
+                               "jumlah": {"type": "integer"}},
+                "required": ["no", "a", "b", "c", "lihat", "subjek", "teks_layar", "analogi", "jumlah"],
             },
         }
     },
@@ -821,8 +822,9 @@ def kata_kunci_adegan(cfg, judul, adegan, batal=None, log=print, subjek="", arti
     membahas artikel itu (kolom "artikel" di hasil), supaya footage-nya diambil dari bukti itu sendiri."""
     artikel = list(artikel)
     hasil = [None] * len(adegan)
-    for mulai in range(0, len(adegan), 12):
-        bagian = adegan[mulai:mulai + 12]
+    kelompok = 8  # 12 adegan sekaligus terlalu panjang untuk dijawab utuh oleh model 12B di CPU
+    for mulai in range(0, len(adegan), kelompok):
+        bagian = adegan[mulai:mulai + kelompok]
         daftar = "\n".join(f"{mulai + i + 1}. {t}" for i, t in enumerate(bagian))
         pesan = [{"role": "user", "content": (
             f"Video tentang: {judul}\n"
@@ -868,6 +870,13 @@ def kata_kunci_adegan(cfg, judul, adegan, batal=None, log=print, subjek="", arti
             "- teks_layar: 1-4 kata HURUF BESAR bahasa Indonesia yang ditampilkan besar di layar saat adegan itu: "
             "angka + satuan atau istilah kunci yang DIUCAPKAN di adegan itu, misalnya \"30 JUTA TAHUN\", \"MELEBAR "
             "5 CM\", \"PALUNG MARIANA\". Isi \"\" kalau adegan tidak punya angka atau istilah penting.\n"
+            "- analogi: kalau narasi adegan memakai PERBANDINGAN dengan benda sehari-hari supaya penonton bisa "
+            "membayangkan (\"setara dengan menumpuk 1.600 gajah\", \"seluas 32.000 kolam renang olimpiade\", \"setinggi "
+            "tiga Menara Eiffel\", \"seberat 50 mobil\", \"cara kerjanya seperti lampu lava\"), tulis benda PEMBANDING "
+            "itu dalam bahasa Inggris untuk dicari fotonya, 1-3 kata, misalnya \"African elephant\", \"Olympic swimming "
+            "pool\", \"Eiffel Tower\", \"car\", \"lava lamp\". Isi \"\" kalau tidak ada perbandingan.\n"
+            "- jumlah: angka pada perbandingan itu sebagai bilangan bulat (1600 untuk \"1.600 gajah\", 3 untuk \"tiga "
+            "Menara Eiffel\"); 0 kalau perbandingannya tanpa angka atau tidak ada perbandingan.\n"
             "Kalimat ajakan (tonton, link di bawah, subscribe, tulis di kolom komentar): JANGAN ikon, tombol, logo, "
             "atau layar — tulis visual paling kuat tentang topik video, sama seperti adegan sebelumnya.\n"
             f"Jawab dengan nomor adegan yang sama.\n\nADEGAN:\n{daftar}")}]
@@ -880,7 +889,7 @@ def kata_kunci_adegan(cfg, judul, adegan, batal=None, log=print, subjek="", arti
             item["required"].append("artikel")
         for coba in range(3):
             try:
-                j = ollama.chat_json(cfg, pesan, schema, batal=batal, maks_token=115 * len(bagian) + 100,
+                j = ollama.chat_json(cfg, pesan, schema, batal=batal, maks_token=150 * len(bagian) + 100,
                                      suhu=0.3 + coba * 0.3)
             except (RuntimeError, ValueError) as e:
                 log(f"Kata kunci adegan {mulai + 1}-{mulai + len(bagian)} gagal ({e})")
@@ -895,17 +904,28 @@ def kata_kunci_adegan(cfg, judul, adegan, batal=None, log=print, subjek="", arti
                     hasil[no]["lihat"] = " ".join(str(item.get("lihat") or "").split())[:160]
                     hasil[no]["subjek"] = " ".join(str(item.get("subjek") or "").split())[:60]
                     hasil[no]["teks_layar"] = " ".join(str(item.get("teks_layar") or "").split()).upper()[:28]
+                    analogi = " ".join(str(item.get("analogi") or "").split())[:40]
+                    if analogi:
+                        hasil[no]["analogi"], hasil[no]["jumlah"] = analogi, max(0, _int(item.get("jumlah")))
                     nomor = _int(item.get("artikel"))
                     if 1 <= nomor <= len(artikel):
                         hasil[no]["artikel"] = artikel[nomor - 1]
             if sum(1 for h in hasil[mulai:mulai + len(bagian)] if h and (h["a"] or h["b"])) >= len(bagian) * 0.8:
                 break
-        log(f"Kata kunci footage: {min(mulai + 12, len(adegan))}/{len(adegan)} adegan")
+        log(f"Kata kunci footage: {min(mulai + kelompok, len(adegan))}/{len(adegan)} adegan")
+    # Adegan yang tetap gagal meminjam kata kunci adegan terdekat yang berhasil (masih satu bahasan), bukan kata kunci
+    # cadangan acak: dulu adegan lempeng tektonik mendapat "desert dunes aerial" dan menampilkan unta di gurun.
+    berhasil = [i for i, h in enumerate(hasil) if h and (h["a"] or h["b"])]
     for i, h in enumerate(hasil):
-        if not h or not (h["a"] or h["b"]):
-            hasil[i] = {"a": "", "b": cadangan(fakta)[i % 10], "c": ""}
-        elif not h["b"]:
-            h["b"] = cadangan(fakta)[i % 10]
+        if h and (h["a"] or h["b"]):
+            if not h["b"]:
+                h["b"] = cadangan(fakta)[i % 10]
+        elif berhasil:
+            dekat = min(berhasil, key=lambda j: (abs(j - i), j > i))  # seri: dahulukan adegan sebelumnya
+            hasil[i] = {**{k: v for k, v in hasil[dekat].items() if k not in ("analogi", "jumlah")},
+                        "teks_layar": "", "pinjam_q": True}
+        else:
+            hasil[i] = {"a": "", "b": cadangan(fakta)[i % 10], "c": "", "pinjam_q": True}
     # Ajakan "Tonton sekarang lewat link di bawah" pernah dicarikan "video link icon" → ikon Iconfinder di akhir
     # Reels. Adegan ajakan yang kata kuncinya ikon/tombol/layar memakai kata kunci adegan sebelumnya (topiknya).
     for i in range(1, len(hasil)):

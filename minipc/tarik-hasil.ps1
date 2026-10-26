@@ -9,8 +9,10 @@ foreach ($p in $pekerja) {
     $tujuan = Join-Path $akar "output\$($p.nama)"
     New-Item -ItemType Directory -Force $tujuan | Out-Null
     try {
+        # Tanpa tanda kutip & kurung kurawal: PowerShell 5.1 mengacaknya saat meneruskan argumen ke ssh.exe
+        # ("${d%/}" pernah sampai sebagai "$d%/" sehingga nama folder berakhiran "/%/").
         $siap = ssh -i $kunci -o BatchMode=yes -o ConnectTimeout=8 $p.host `
-            'cd ~/video-konspirasi/output 2>/dev/null && ls -1d */ 2>/dev/null | while read d; do [ -f "$d/deskripsi.txt" ] && echo "${d%/}"; done'
+            'cd ~/video-konspirasi/output 2>/dev/null && for d in */; do test -f $d/deskripsi.txt && basename $d; done'
     } catch {
         Write-Host "$($p.nama) ($($p.host)) tidak terjangkau: $_" -ForegroundColor Yellow
         continue

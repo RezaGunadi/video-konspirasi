@@ -133,15 +133,35 @@ _POP_STIKER = (0.5, 0.78, 1.0, 1.1, 1.12, 1.07, 1.02, 1.0)
 _SUDUT_STIKER = (-4.0, 3.0, -2.5, 4.5, -3.5, 2.0)
 
 
-def buat_stiker(sumber, label, format_video, nomor, folder):
+def _tumpukan(kartu, n, Image):
+    """n salinan kartu foto ditumpuk ke atas seperti menara (analogi "menumpuk 1.600 gajah"): tiap salinan naik
+    ±40% tinggi kartu, miring bergantian, salinan atas menutupi yang di bawahnya."""
+    salinan = [kartu.rotate(sudut, resample=Image.BICUBIC, expand=True) for sudut in (-5, 4, -3, 5, -4)[:n]]
+    langkah = int(kartu.height * 0.4)
+    geser = int(kartu.width * 0.06)
+    lebar = max(c.width for c in salinan) + 2 * geser
+    tinggi = langkah * (n - 1) + max(c.height for c in salinan)
+    kanvas = Image.new("RGBA", (lebar, tinggi), (0, 0, 0, 0))
+    for i, c in enumerate(salinan):  # yang paling bawah digambar dulu
+        x = (lebar - c.width) // 2 + (geser if i % 2 else -geser)
+        kanvas.alpha_composite(c, (max(0, x), max(0, tinggi - c.height - i * langkah)))
+    return kanvas
+
+
+def buat_stiker(sumber, label, format_video, nomor, folder, tumpuk=0):
     """Foto jadi stiker seperti di video berita/konspirasi YouTube: bingkai putih bersudut bulat, bayangan, sedikit
     miring, label kuning di pojok bawah. Disimpan sebagai urutan PNG transparan berisi animasi muncul.
+    tumpuk = jumlah dalam analogi (1.600 gajah): ≥2 → beberapa salinan foto ditumpuk ke atas (maksimal 4).
     Mengembalikan (pola_png, x, y): posisi kiri-atas kanvas stiker di layar."""
     from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
     W, H = UKURAN[format_video]
     tegak = format_video == "9:16"
+    n_tumpuk = 1 if tumpuk < 2 else min(4, tumpuk)
     # Shorts: di tengah atas (subtitle ada di ±70% tinggi layar); YouTube: di samping, kiri/kanan bergantian.
     maks_w, maks_h = (int(W * 0.72), int(H * 0.32)) if tegak else (int(W * 0.40), int(H * 0.50))
+    if n_tumpuk > 1:  # menara n kartu harus muat di kotak yang sama (lebih tinggi sedikit di Shorts)
+        maks_h = int((H * (0.40 if tegak else 0.62)) / (1 + 0.4 * (n_tumpuk - 1)))
+        maks_w = int(maks_w * 0.8)
     foto = ImageOps.exif_transpose(Image.open(sumber)).convert("RGB")
     s = min(maks_w / foto.width, maks_h / foto.height)
     foto = foto.resize((max(1, round(foto.width * s)), max(1, round(foto.height * s))), Image.LANCZOS)
@@ -151,9 +171,12 @@ def buat_stiker(sumber, label, format_video, nomor, folder):
     bulat = Image.new("L", kartu.size, 0)
     ImageDraw.Draw(bulat).rounded_rectangle((0, 0, kartu.width - 1, kartu.height - 1), radius=tepi, fill=255)
     kartu.putalpha(bulat)
+    if n_tumpuk > 1:
+        kartu = _tumpukan(kartu, n_tumpuk, Image)
     label = " ".join((label or "").split()).upper()
     if label:
-        ukuran = round(W * (0.045 if tegak else 0.024))
+        # label tumpukan ("×1.600") adalah inti pesannya, jadi jauh lebih besar dari label subjek biasa
+        ukuran = round(W * ((0.075 if tegak else 0.042) if n_tumpuk > 1 else (0.045 if tegak else 0.024)))
         lebar_maks = kartu.width - 3 * tepi
         while True:  # kecilkan huruf sampai label muat di lebar foto
             huruf = ImageFont.truetype(font("impact"), ukuran)
@@ -169,7 +192,8 @@ def buat_stiker(sumber, label, format_video, nomor, folder):
         gabung.alpha_composite(kartu, (0, 0))
         gabung.alpha_composite(tag, (2 * tepi, kartu.height - tag.height // 2))
         kartu = gabung
-    kartu = kartu.rotate(_SUDUT_STIKER[nomor % len(_SUDUT_STIKER)], resample=Image.BICUBIC, expand=True)
+    if n_tumpuk == 1:  # tumpukan sudah miring per kartu
+        kartu = kartu.rotate(_SUDUT_STIKER[nomor % len(_SUDUT_STIKER)], resample=Image.BICUBIC, expand=True)
     geser = (round(W * 0.008), round(W * 0.012))
     ruang = round(W * 0.03)
     penuh = Image.new("RGBA", (kartu.width + 2 * ruang + geser[0], kartu.height + 2 * ruang + geser[1]), (0, 0, 0, 0))
@@ -267,7 +291,8 @@ def buat_shot(bahan, frames, format_video, gaya, isi_layar, nomor, tujuan, batal
     masuk, efek_akhir = _efek_misterius(gaya, format_video, nomor, transisi, masuk)
     if stiker:
         # Ditempel SETELAH grade & kabut: stikernya tetap tajam dan berwarna seperti tempelan editor.
-        pola, sx, sy = buat_stiker(stiker["file"], stiker.get("label", ""), format_video, nomor, Path(tujuan).parent)
+        pola, sx, sy = buat_stiker(stiker["file"], stiker.get("label", ""), format_video, nomor, Path(tujuan).parent,
+                                   tumpuk=stiker.get("tumpuk", 0))
         idx = masuk.count("-i")
         masuk = [*masuk, "-framerate", str(FPS), "-start_number", "0", "-i", pola]
         efek_akhir += (f"[e];[{idx}:v]format=rgba,setpts=PTS+{stiker.get('tunda', 0.12):.3f}/TB[s];"

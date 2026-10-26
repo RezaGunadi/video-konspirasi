@@ -1251,6 +1251,38 @@ def urutkan_untuk_adegan(cfg, narasi, q, format_video, terpakai, cek_gambar, bat
     return kandidat
 
 
+def kandidat_analogi(cfg, benda, narasi, cek_gambar, batal=None, log=print):
+    """Foto benda PEMBANDING dalam analogi narasi ("setara dengan menumpuk 1.600 gajah" → African elephant), untuk
+    ditampilkan sebagai stiker bertumpuk. Hanya foto (bukan klip), satu benda utuh yang jelas; dinilai AI kalau
+    cek_gambar. Mengembalikan kandidat terbaik dulu, ditandai analogi=True."""
+    tugas = [lambda: wikimedia(benda), lambda: openverse(benda)]
+    if cfg.get("sumber_web") in ("semua", "berlisensi"):
+        tugas.append(lambda: web_bing(benda, lisensi=cfg.get("sumber_web") == "berlisensi"))
+    semua, lihat = [], set()
+    for fn in tugas:
+        try:
+            for k in fn():
+                if k["jenis"] == "gambar" and identitas(k) not in lihat and \
+                        not BUKAN_SUBJEK.search(f"{k.get('judul') or ''} {k.get('teks') or ''}"):
+                    lihat.add(identitas(k))
+                    semua.append({**k, "kueri": benda, "analogi": True})
+        except Exception as e:
+            log(f"  Foto analogi “{benda}” gagal dicari: {e}")
+    for k in semua:
+        k["skor_h"] = nilai_heuristik(k, "16:9", set(), set(_kata(benda)))
+    semua.sort(key=lambda k: -k["skor_h"])
+    if not cek_gambar or not semua:
+        return semua[:3]
+    skor = nilai_ai(cfg, narasi, semua[:4], batal, lihat=f"foto {benda} yang jelas: satu benda/makhluk utuh, bukan "
+                    "kartun, bukan diagram, bukan kerumunan", subjek=benda, spesifik=True)
+    for k, s in zip(semua[:4], skor or []):
+        if s:
+            k["skor_ai"], k["isi_ai"] = s[0], s[1]
+    tepat = [k for k in semua[:4] if (k.get("skor_ai") or 0) >= SKOR_BAGUS]
+    log(f"  Analogi “{benda}”: {len(tepat)} foto yang pas" + (f" ({tepat[0].get('isi_ai')})" if tepat else ""))
+    return tepat
+
+
 # ---------------------------------------------------------------- unduh / potong
 
 def _archive_file(ia_id):

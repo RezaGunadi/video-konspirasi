@@ -871,8 +871,10 @@ def _rencana_video(p, a, i, frames_adegan):
     klip = sorted((j for j, k in enumerate(kand) if k["jenis"] == "video" and k["id"] and
                    (not cek or k.get("cadangan") or k.get("pinjam") or footage.nilai_latar(k) >= footage.LATAR_BAGUS)),
                   key=lambda j: -nilai(j))
-    if not any(not kand[j].get("pinjam") for j in klip) and i > 0:
-        # tidak ada klip sama sekali: pinjam klip adegan sebelumnya yang potongannya belum habis
+    if sum(1 for j in klip if not kand[j].get("pinjam")) < 2 and len(potong) >= 3 and i > 0:
+        # klip adegan ini kurang dari 2 untuk ≥3 potongan: pinjam klip adegan sebelumnya (masih satu bahasan) yang
+        # potongannya belum habis, daripada satu klip jadi satu take 15 detik
+        # (dulu hanya saat klip kosong sama sekali)
         for b in reversed(p["adegan"][:i]):
             for s in b.get("shots", []):
                 kb = (b.get("kandidat") or [])[s["pilih"]] if s.get("pilih") is not None and \
@@ -887,7 +889,7 @@ def _rencana_video(p, a, i, frames_adegan):
 
     def tepat(j):
         k = kand[j]
-        if k["jenis"] == "video" or k.get("pinjam") or footage.identitas(k) in dipakai:
+        if k["jenis"] == "video" or k.get("pinjam") or k.get("analogi") or footage.identitas(k) in dipakai:
             return False
         if cek:
             return (k.get("skor_ai") or 0) >= footage.SKOR_BAGUS
@@ -904,18 +906,29 @@ def _rencana_video(p, a, i, frames_adegan):
         if s.get("pilih") is not None and s["pilih"] < len(b.get("kandidat") or []):
             lalu = footage.identitas(b["kandidat"][s["pilih"]])
 
+    di_adegan = {}  # identitas klip → berapa kali tampil di adegan ini
+
     def ambil_klip():
         for ulang in (False, True):  # klip yang belum tampil dulu, baru potongan lain dari klip yang sudah tampil
             for j in klip:
                 idn = footage.identitas(kand[j])
                 n = len(pakai.get(idn, ()))
-                if idn == lalu or (n > 0) != ulang or n >= footage.maks_bagian(kand[j], durasi_shot):
+                if idn == lalu or (n > 0) != ulang or n >= footage.maks_bagian(kand[j], durasi_shot) \
+                        or di_adegan.get(idn, 0) >= 2:
                     continue
                 if not ulang and idn in dipakai and not kand[j].get("pinjam"):
                     continue
                 return j
         return None
 
+    def perpanjang(tambah):
+        """Shot sebelumnya dibuat lebih panjang (satu take utuh), daripada memotong klip yang sama berkali-kali."""
+        shots[-1]["frames"] += tambah
+
+    # Aturan supaya tidak "patah-patah" (berlaku untuk topik apa pun): tidak ada shot di bawah 2,5 detik, klip yang
+    # sama tidak pernah berurutan (diperpanjang jadi satu take), dan klip yang sama paling banyak 2x per adegan.
+    # Dulu klip pantai yang sama dipotong 5-7x berturut-turut ±2 detik, dan foto/klip berselang-seling tiap 1,7 detik.
+    minim = int(2.5 * fps)
     while antre:
         f = antre.pop(0)
         nomor = len(shots)
@@ -924,36 +937,40 @@ def _rencana_video(p, a, i, frames_adegan):
             continue
         # Sesekali foto tepat yang sangat kuat tampil layar penuh (seperti potongan dokumen/foto di video
         # referensi), selama total foto layar penuh masih di bawah 25% video.
-        if nomor == 1 and len(potong) >= 3 and foto and (kand[foto[0]].get("skor_ai") or 0) >= 8 and \
-                foto_layar + min(f, maks_foto) <= 0.25 * (total_layar + frames_adegan):
-            j = foto.pop(0)
-            bagi = min(f, maks_foto)
-            if f - bagi and antre and f - bagi < 1.5 * fps:  # sisa sependek itu cuma berkedip: gabung ke berikutnya
-                antre[0] += f - bagi
-            elif f - bagi:
-                antre.insert(0, f - bagi)
-            shots.append({"frames": bagi, "pilih": j, "bahan": None})
-            dipakai.add(footage.identitas(kand[j]))
-            sudah_dipakai.append(kand[j])
-            foto_layar += bagi
-            continue
-        j = ambil_klip()
+        kuat = nomor == 1 and len(potong) >= 3 and foto and (kand[foto[0]].get("skor_ai") or 0) >= 8 and \
+            foto_layar + min(f, maks_foto) <= 0.25 * (total_layar + frames_adegan)
+        j = None if kuat else ambil_klip()
         if j is None:
-            # tidak ada klip: foto layar penuh, dipotong maksimal 3 detik per foto (lebih 0,1 detik masih dihitung 3)
-            if f > maks_foto + 3:
-                n = math.ceil(f / maks_foto)
-                bagian = [f // n + (1 if x < f % n else 0) for x in range(n)]
-                f, antre = bagian[0], bagian[1:] + antre
             j = foto.pop(0) if foto else _kandidat_baru(kand, dipakai, sudah_dipakai, [s["pilih"] for s in shots])
         if j is None:
-            shots.append({"frames": f, "pilih": None, "bahan": None})
+            if shots:
+                perpanjang(f)
+            else:
+                shots.append({"frames": f, "pilih": None, "bahan": None})
             continue
         k = kand[j]
         idn = footage.identitas(k)
+        if shots and idn == lalu:  # cadangan menunjuk klip yang barusan tampil: sambung saja, jangan dipotong
+            perpanjang(f)
+            continue
+        if k["jenis"] != "video" and f > maks_foto + 3:
+            # foto layar penuh maksimal 3 detik; sisanya jadi potongan berikutnya kalau ≥2,5 detik, kalau tidak
+            # ditambahkan ke klip sebelumnya / potongan berikutnya (tidak ada potongan sependek 1,7 detik lagi)
+            sisa = f - maks_foto
+            f = maks_foto
+            if sisa >= minim:
+                antre.insert(0, sisa)
+            elif shots and shots[-1].get("pilih") is not None and kand[shots[-1]["pilih"]]["jenis"] == "video":
+                perpanjang(sisa)
+            elif antre:
+                antre[0] += sisa
+            else:
+                f += sisa
         s = {"frames": f, "pilih": j, "bahan": None}
         if k["jenis"] == "video":
             s["bagian"] = _bagian_bebas(p, k, pakai=pakai)
             pakai.setdefault(idn, set()).add(s["bagian"])
+            di_adegan[idn] = di_adegan.get(idn, 0) + 1
             lalu = idn
         else:
             foto_layar += f
@@ -964,16 +981,22 @@ def _rencana_video(p, a, i, frames_adegan):
         sudah_dipakai.append(k)
         shots.append(s)
 
-    # Stiker: foto tepat di klip pertama, lalu selang-seling (klip ke-1, ke-3, …) selama fotonya ada. Shot yang
-    # tertutup judul hook di 2 detik pertama video dilewati.
     t, n = a["mulai"], 0
+    layak_stiker = []  # shot klip yang cukup lama dan tidak tertutup judul hook di ±3 detik pertama video
     for s in shots:
         mulai, t = t, t + s["frames"] / fps
         kb = kand[s["pilih"]] if s.get("pilih") is not None else None
-        if not kb or kb["jenis"] != "video" or s["frames"] < 1.5 * fps or mulai + s["frames"] / fps < 3.5:
-            continue
-        n += 1
-        if n % 2 == 0:
+        if kb and kb["jenis"] == "video" and s["frames"] >= 1.5 * fps and mulai + s["frames"] / fps >= 3.5:
+            layak_stiker.append(s)
+    # Analogi ("setara dengan menumpuk 1.600 gajah"): foto benda pembandingnya ditumpuk di shot klip pertama.
+    analogi = next((j for j, k in enumerate(kand) if k.get("analogi") and footage.identitas(k) not in dipakai), None)
+    if analogi is not None and layak_stiker:
+        s = layak_stiker[0]
+        s["stiker"], s["tumpuk"] = analogi, int(a["q"].get("jumlah") or 0)
+        dipakai.add(footage.identitas(kand[analogi]))
+    # Stiker foto tepat: shot klip ke-1, ke-3, … selama fotonya ada.
+    for n, s in enumerate(layak_stiker):
+        if n % 2 or s.get("stiker") is not None:
             continue
         while foto:
             j = foto.pop(0)
@@ -1061,13 +1084,17 @@ def l_footage(p, cfg, batal):
     gagal_unduh = set()  # kandidat yang gagal tidak dicoba lagi di shot lain
     if not p.get("riset"):  # mode "bacakan": cari artikel topiknya untuk gambar topik
         p["riset"] = riset.kumpulkan(cfg, p["naskah"][:1500], batal, log=lambda t: log(p, t))
-    if any(not a.get("q") for a in p["adegan"]):  # "Cari ulang footage": buat kata kunci baru
-        log(p, "AI membuat ulang kata kunci footage…")
-        q = naskah.kata_kunci_adegan(cfg, p["meta"].get("judul") or p["nama"], [a["teks"] for a in p["adegan"]],
+    # Kata kunci baru untuk adegan yang belum punya ("Cari ulang footage"), atau yang hanya meminjam kata kunci
+    # tetangganya karena AI sempat gagal (misalnya Ollama mati sesaat) — selama footage-nya belum dicari.
+    ulang = [a for a in p["adegan"] if not a.get("kandidat") and
+             (not a.get("q") or a["q"].get("pinjam_q") or "lihat" not in a["q"])]
+    if ulang:
+        log(p, f"AI membuat ulang kata kunci footage untuk {len(ulang)} adegan…")
+        q = naskah.kata_kunci_adegan(cfg, p["meta"].get("judul") or p["nama"], [a["teks"] for a in ulang],
                                      batal, log=lambda t: log(p, t), subjek=_subjek(p), artikel=_artikel_bukti(p),
                                      fakta=_fakta(p))
-        _lengkapi_artikel(p, [a["teks"] for a in p["adegan"]], q)
-        for a, qq in zip(p["adegan"], q):
+        _lengkapi_artikel(p, [a["teks"] for a in ulang], q)
+        for a, qq in zip(ulang, q):
             a["q"] = qq
     if o["mode"] == "recreate":
         _footage_recreate(p)
@@ -1110,7 +1137,11 @@ def l_footage(p, cfg, batal):
                                                            video=True) if k["jenis"] == "video" and k["id"] not in ada]
                     log(p, f"  Tidak ada klip yang pas — {len(cad[:4])} klip suasana “{q_cad}” disiapkan sebagai latar")
                     kand = [{**k, "cadangan": True} for k in cad[:4]] + kand
-            a["kandidat"] = kand[:20]
+            if video and a["q"].get("analogi"):
+                # "setara dengan menumpuk 1.600 gajah": foto benda pembandingnya jadi stiker bertumpuk
+                kand = footage.kandidat_analogi(cfg, a["q"]["analogi"], a["teks"], o["cek_gambar"], batal,
+                                                log=lambda t: log(p, t))[:2] + kand
+            a["kandidat"] = kand[:22]
         if a.get("banding") and not a["banding"].get("siap"):
             _siapkan_banding(p, a, cfg, batal, judul_video)
         frames_adegan = int(round(a["durasi"] * render.FPS))
@@ -1335,8 +1366,11 @@ def l_render(p, cfg, batal):
                 # judul hook memenuhi layar ±3 detik pertama: stiker menunggu sampai judulnya hilang
                 tunda = max(0.12, 3.05 - mulai_shot) if ada_hook else 0.12
                 if s["frames"] / render.FPS - tunda >= 1.0:
-                    stiker = {"file": s["stiker_bahan"]["file"], "label": _label_stiker(a["q"].get("subjek")),
-                              "tunda": tunda}
+                    tumpuk = int(s.get("tumpuk") or 0)
+                    # stiker analogi: labelnya jumlahnya ("×1.600"), bukan subjek adegan
+                    label = (f"×{tumpuk:,}".replace(",", ".") if tumpuk > 1 else "") if "tumpuk" in s else \
+                        _label_stiker(a["q"].get("subjek"))
+                    stiker = {"file": s["stiker_bahan"]["file"], "label": label, "tunda": tunda, "tumpuk": tumpuk}
             muncul = acara.get((i, j))
             maskot_shot = {**muncul, "file": gambar_maskot[muncul["pose"]]} if muncul else None
             tujuan = kerja / f"shot-{i:03d}-{j}.mp4"

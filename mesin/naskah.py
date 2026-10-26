@@ -36,17 +36,21 @@ GAYA_NASKAH = {
                  "temuan ilmiah jadi teka-teki yang dijawab satu per satu dengan bahasa yang gampang dipahami orang awam."),
         "aturan": """- Ikuti arahan dari TOPIK / CATATAN pembuat video, tetap dengan aturan di bawah.
 - Ini video FAKTA, bukan teori konspirasi atau opini. Semua isi harus benar menurut BAHAN FAKTA atau pengetahuan ilmiah yang sangat umum. Bedakan yang sudah pasti ("para ilmuwan menemukan", "hasil pengukuran menunjukkan") dari dugaan ilmiah ("para ilmuwan menduga", "kemungkinan besar"). Kalau ragu, jangan sebut angka.
-- Kalimat pertama: fakta paling mengejutkan sebagai hook, misalnya "Sungai Nil melakukan hal yang hampir tidak bisa dilakukan sungai besar lain: ia menolak berpindah."
+- HOOK = dua kalimat pertama, masing-masing maksimal 14 kata: fakta paling mengejutkan yang bisa langsung dibayangkan, lalu kontras "tapi…" yang memancing pertanyaan besar. Misalnya "Di dasar laut ini, tekanannya setara 1.600 gajah di atas satu titik. Tapi ada makhluk yang hidup santai di sana." JANGAN membuka dengan pengantar, definisi, sapaan, "tahukah kamu", "jika kamu berdiri di…", atau latar sejarah.
+- Kalimat ketiga: janji yang baru terjawab di akhir video, misalnya "Dan cara mereka bertahan jauh lebih aneh dari yang kamu kira."
 - Lalu jelaskan kenapa itu aneh: bagaimana biasanya, lalu apa yang berbeda di sini ("Sungai besar biasanya berkelok dan berpindah. Tapi Nil tidak.").
-- Untuk konsep yang sulit, pakai analogi sehari-hari ("bayangkan selang taman yang dibiarkan menyala", "cara kerjanya mirip lampu lava raksasa") dan pembanding skala yang mudah dibayangkan ("sebagai perbandingan, manusia baru ada sekitar 300 ribu tahun", "seluas 32 ribu kolam renang olimpiade").
-- Susun sebagai beberapa pertanyaan yang dijawab berurutan. Kalau jawabannya punya beberapa alasan, beri nomor ("Pertama… Kedua… Ketiga…") lalu rangkum dalam satu kalimat ("Jadi, ada tiga hal: …").
+- Susun sebagai rangkaian pertanyaan yang dijawab satu per satu. Tiap jawaban membuka pertanyaan berikutnya, dan tiap paragraf diakhiri pancingan ke paragraf berikutnya ("Tapi itu belum yang paling aneh.", "Lalu dari mana tekanan sebesar itu?"). Urutkan dari yang mengejutkan ke yang PALING mengejutkan; jawaban hook disimpan untuk menjelang akhir.
+- Untuk konsep yang sulit, pakai analogi sehari-hari ("bayangkan selang taman yang dibiarkan menyala", "cara kerjanya mirip lampu lava raksasa") dan pembanding skala yang mudah dibayangkan ("seluas 32 ribu kolam renang olimpiade").
+- PADAT: setiap fakta, angka, dan perbandingan disebut SATU KALI saja di seluruh naskah. JANGAN merangkum ulang isi yang sudah disebut, jangan "Pertama… Kedua… Ketiga…" yang mengulang penjelasan sebelumnya. Buang kalimat yang tidak menambah informasi baru atau ketegangan, termasuk transisi kosong seperti "Namun, untuk memahami…", "Lantas, bagaimana…", "Hal ini membuktikan bahwa…". Kata "luar biasa", "Namun", dan "Sebagai perbandingan" masing-masing paling banyak satu kali.
 - Sebut angka konkret (tahun, ukuran, jarak, umur) dengan satuan yang biasa dipakai di Indonesia (meter, kilometer, derajat Celsius).
-- Penutup: satu kalimat dampak atau kesimpulan yang bikin "wow" (boleh sedikit jenaka), lalu satu pertanyaan ke penonton.""",
-        "pendek": ("Alur: hook fakta paling mengejutkan, kenapa itu aneh (biasanya vs kenyataannya), jawaban para "
-                   "ilmuwan dengan satu analogi, satu angka pembanding, kesimpulan yang bikin wow, pertanyaan penutup."),
-        "panjang": ("Alur: hook fakta paling mengejutkan, kenapa itu aneh, pertanyaan pertama dan jawabannya (dengan "
-                    "analogi), pertanyaan kedua yang lebih besar dan jawabannya (beberapa alasan bernomor lalu "
-                    "dirangkum), sejarah atau dampaknya bagi manusia, kesimpulan yang bikin wow, pertanyaan penutup."),
+- Penutup: jawab pertanyaan dari hook dengan satu atau dua kalimat yang bikin "wow" (boleh sedikit jenaka), lalu satu pertanyaan ke penonton.""",
+        "pendek": ("Alur: hook dua kalimat (fakta paling mengejutkan + kontras \"tapi…\"), janji, kenapa itu aneh, "
+                   "jawaban para ilmuwan dengan satu analogi dan satu angka pembanding, jawaban hook yang bikin wow, "
+                   "pertanyaan penutup. Tanpa rangkuman."),
+        "panjang": ("Alur: hook dua kalimat (fakta paling mengejutkan + kontras \"tapi…\"), janji, kenapa itu aneh, "
+                    "rangkaian pertanyaan yang dijawab satu per satu dengan ketegangan yang terus naik (tiap jawaban "
+                    "membuka pertanyaan berikutnya), fakta paling mengejutkan menjelang akhir, jawaban hook yang bikin "
+                    "wow, pertanyaan penutup. Tanpa rangkuman yang mengulang."),
     },
     # Host yang ngobrol ke kamera dan "menyambungkan titik" dari fakta yang tercatat (contoh pengguna: video krisis
     # air Bill Gates). Yang membuatnya meyakinkan adalah fakta nyata yang spesifik + pertanyaan retoris, bukan klaim
@@ -176,9 +180,9 @@ SCHEMA_INTI = {  # kolom datar + bukti bernomor (array membuat gemma mengulang t
                    "fakta_1": {"type": "string"}, "artinya_1": {"type": "string"},
                    "fakta_2": {"type": "string"}, "artinya_2": {"type": "string"},
                    "fakta_3": {"type": "string"}, "artinya_3": {"type": "string"},
-                   "versi_resmi": {"type": "string"}, "kesimpulan": {"type": "string"}},
+                   "versi_resmi": {"type": "string"}, "kesimpulan": {"type": "string"}, "hook": {"type": "string"}},
     "required": ["pertanyaan", "teori", "konteks", "fakta_1", "artinya_1", "fakta_2", "artinya_2", "fakta_3",
-                 "artinya_3", "versi_resmi", "kesimpulan"],
+                 "artinya_3", "versi_resmi", "kesimpulan", "hook"],
 }
 
 
@@ -197,6 +201,9 @@ def inti_cerita(cfg, bahan, riset, batal=None, log=print, gaya="meyakinkan"):
         "- artinya_1..3: arti fakta itu bagi orang awam, sebaiknya dengan analogi sehari-hari atau pembanding skala.\n"
         "- versi_resmi: hal yang masih belum diketahui atau masih diteliti para ilmuwan (isi \"-\" kalau tidak ada).\n"
         "- kesimpulan: kalimat penutup yang MENJAWAB pertanyaan besar sekaligus dampaknya yang bikin wow.\n"
+        "- hook: DUA kalimat pembuka video (masing-masing maksimal 14 kata): fakta paling mengejutkan di atas yang "
+        "bisa langsung dibayangkan (pakai angka atau perbandingan), lalu kontras \"Tapi…\" yang memancing pertanyaan "
+        "besar. Bukan pengantar, bukan definisi.\n"
         "Semua harus fakta dari BAHAN FAKTA atau pengetahuan ilmiah yang sangat umum, tanpa teori konspirasi."
         if fakta else
         "- pertanyaan: satu pertanyaan besar yang dijawab video ini, yang bikin orang awam penasaran.\n"
@@ -209,6 +216,8 @@ def inti_cerita(cfg, bahan, riset, batal=None, log=print, gaya="meyakinkan"):
         "- versi_resmi: penjelasan resmi atau ilmiah singkat yang adil.\n"
         "- kesimpulan: kalimat penutup yang MENJAWAB pertanyaan besar menurut teori, diawali \"Kalau semua "
         "digabung\".\n"
+        "- hook: satu atau dua kalimat pembuka video (masing-masing maksimal 14 kata) yang langsung melempar "
+        "kecurigaan terbesar sebagai klaim, dengan detail konkret. Bukan pengantar.\n"
         "Fakta, angka, dan nama hanya dari BAHAN FAKTA. Jangan menuduh orang nyata berbuat kejahatan.")
     # Awal prompt (system + BAHAN FAKTA + TOPIK) dibuat SAMA PERSIS dengan prompt penulisan naskah berikutnya, supaya
     # Ollama memakai ulang cache-nya. Di mini PC tanpa GPU, membaca ±8.000 token bahan riset makan ±20 menit.
@@ -217,7 +226,7 @@ def inti_cerita(cfg, bahan, riset, batal=None, log=print, gaya="meyakinkan"):
         f"Sebelum naskah video {'sains/fakta' if fakta else 'konspirasi/misteri'} ditulis, susun INTI CERITANYA dalam "
         f"bahasa Indonesia sehari-hari, satu kalimat per kolom:\n{kolom}")}]
     try:
-        j = ollama.chat_json(cfg, pesan, SCHEMA_INTI, batal=batal, maks_token=700, suhu=0.4)
+        j = ollama.chat_json(cfg, pesan, SCHEMA_INTI, batal=batal, maks_token=800, suhu=0.4)
     except (RuntimeError, ValueError) as e:
         log(f"Inti cerita gagal disusun ({e}) — naskah ditulis langsung")
         return ""
@@ -227,7 +236,11 @@ def inti_cerita(cfg, bahan, riset, batal=None, log=print, gaya="meyakinkan"):
     log(f"Inti cerita: {bersih['pertanyaan']} → {bersih['teori']}")
     bukti = "\n".join(f"{n}. {bersih[f'fakta_{n}']} → artinya: {bersih[f'artinya_{n}']}" for n in (1, 2, 3)
                       if bersih[f"fakta_{n}"])
-    return (f"Pertanyaan besar: {bersih['pertanyaan']}\n{'Jawaban para ilmuwan' if fakta else 'Teorinya'}: "
+    # hook di baris pertama: dipakai sebagai kalimat pembuka naskah (dulu video dibuka "Jika kamu berdiri di puncak
+    # Everest…" — pengantar pelan, penonton keburu pergi)
+    return ((f"Hook pembuka (jadikan dua kalimat pertama naskah, boleh diperhalus): {bersih['hook']}\n"
+             if bersih["hook"] else "")
+            + f"Pertanyaan besar: {bersih['pertanyaan']}\n{'Jawaban para ilmuwan' if fakta else 'Teorinya'}: "
             f"{bersih['teori']}\nKonteks untuk penonton awam: {bersih['konteks']}\n"
             f"{'Penjelasan' if fakta else 'Bukti'} (fakta → artinya):\n{bukti}\n"
             f"{'Yang masih diteliti' if fakta else 'Versi resmi'}: {bersih['versi_resmi']}\n"
@@ -295,6 +308,36 @@ def _buang_ulangan(sebelumnya, teks):
     return sebelumnya, teks
 
 
+def buang_fakta_berulang(teks):
+    """Model 12B sering menutup video panjang dengan rangkuman "Pertama… Kedua… Ketiga…" yang mengulang semua angka
+    (naskah Palung Mariana menyebut 1.600 gajah, 1.071 kali tekanan, dan suhu 1-4 derajat masing-masing dua kali) —
+    terasa bertele-tele. Kalimat yang angkanya SEMUA sudah pernah disebut dan kata-katanya sebagian besar sama dengan
+    kalimat terdahulu dibuang; begitu juga kalimat tanpa angka baru yang hampir semua katanya sudah pernah diucapkan
+    ("Pertama, Palung Mariana terbentuk karena proses subduksi." di rangkuman: 14% kata baru)."""
+    sudah_angka, sudah_kata, semua, hasil = set(), [], set(), []
+    for par in teks.split("\n\n"):
+        simpan = []
+        for k in pecah_kalimat(par):
+            angka = set(re.findall(r"\d+(?:[.,]\d+)*", k))
+            kata = {w for w in re.findall(r"\w+", k.lower()) if len(w) > 3}
+            mirip = max((len(kata & lama) / len(kata) for lama in sudah_kata), default=0) if kata else 0
+            baru = len(kata - semua) / len(kata) if kata else 1
+            if not (angka - sudah_angka) and ((angka and mirip >= 0.45) or (len(kata) >= 5 and mirip >= 0.8)
+                                              or (len(kata) >= 7 and baru <= 0.15)):
+                continue
+            simpan.append(k)
+            sudah_angka |= angka
+            sudah_kata.append(kata)
+            semua |= kata
+        if simpan:
+            hasil.append(" ".join(simpan))
+    teks = "\n\n".join(hasil)
+    if not re.search(r"(^|[.!?]\s+|\n)Pertama\b", teks):  # "Pertama…" terbuang: "Kedua," jadi tanpa nomor
+        teks = re.sub(r"(^|[.!?]\s+|\n)(?:Kedua|Ketiga|Keempat|Kelima|Terakhir)\s*,\s*(\w)",
+                      lambda m: m.group(1) + m.group(2).upper(), teks)
+    return teks
+
+
 def _fakta(riset):
     return "\n\n".join(f"[{s['judul']} — Wikipedia {s['lang']}]\n{s['teks']}" for s in riset) or "(tidak ada)"
 
@@ -331,7 +374,7 @@ def tulis(cfg, bahan, riset, durasi, batal=None, saat_token=None, log=print, gay
             f"{g['pendek'] if durasi <= 90 else g['panjang']}{_perintah_cta(cta)}")},
     ]
     teks = ollama.chat(cfg, pesan, suhu=0.8, batal=batal, saat_token=saat_token, maks_token=int(kata * 3 + 200))
-    return bersihkan(teks), []
+    return buang_fakta_berulang(bersihkan(teks)), []
 
 
 SCHEMA_KERANGKA = {
@@ -345,15 +388,19 @@ SCHEMA_KERANGKA = {
 
 BAGIAN_PANJANG = {  # instruksi bagian pertama/terakhir kerangka & naskah panjang per gaya
     "sains": {
-        "kerangka_awal": "berupa fakta paling mengejutkan dan kenapa itu aneh ",
-        "tengah": ("tiap bagian menjawab SATU pertanyaan (penyebabnya, cara kerjanya, buktinya, sejarah penemuannya, "
-                   "dampaknya bagi manusia) dengan fakta konkret dari BAHAN FAKTA, analogi sehari-hari, dan pembanding "
-                   "skala; kalau ada beberapa alasan, beri nomor lalu rangkum"),
-        "kerangka_akhir": "Bagian terakhir: rangkuman jawaban, dampak atau kesimpulan yang bikin wow, dan penutup.",
-        "pertama": ("Ini bagian PERTAMA: buka dengan fakta paling mengejutkan, jelaskan kenapa itu aneh, lalu "
-                    "lemparkan pertanyaan besar yang akan dijawab video ini."),
-        "terakhir": ("Ini bagian TERAKHIR: rangkum jawabannya dalam beberapa kalimat pendek, tutup dengan dampak atau "
-                     "kesimpulan yang bikin wow (boleh sedikit jenaka), lalu satu pertanyaan ke penonton."),
+        "kerangka_awal": "berupa dua kalimat (fakta paling mengejutkan + kontras \"tapi…\"), janji jawaban, ",
+        "tengah": ("tiap bagian menjawab SATU pertanyaan BARU (penyebabnya, cara kerjanya, buktinya, sejarah "
+                   "penemuannya, dampaknya bagi manusia) dengan fakta konkret dari BAHAN FAKTA, analogi sehari-hari, "
+                   "dan pembanding skala; urut dari yang mengejutkan ke yang paling mengejutkan, tidak ada fakta yang "
+                   "dibahas di dua bagian"),
+        "kerangka_akhir": ("Bagian terakhir: jawaban paling mengejutkan yang menjawab hook di awal, dampaknya bagi kita, "
+                           "dan penutup — BUKAN rangkuman."),
+        "pertama": ("Ini bagian PERTAMA: dua kalimat pertama adalah hook (fakta paling mengejutkan, lalu kontras "
+                    "\"tapi…\"; masing-masing maksimal 14 kata), lalu satu kalimat janji apa yang akan terjawab, lalu "
+                    "kenapa itu aneh. Tanpa pengantar, definisi panjang, atau sapaan."),
+        "terakhir": ("Ini bagian TERAKHIR: JANGAN merangkum dan JANGAN mengulang fakta atau angka yang sudah disebut. "
+                     "Ungkap jawaban yang menjawab hook di awal video, satu kalimat dampaknya yang bikin wow (boleh "
+                     "sedikit jenaka), lalu satu pertanyaan ke penonton."),
     },
     "meyakinkan": {
         "kerangka_awal": "berupa hal yang pernah didengar penonton lalu dibelokkan, plus jawaban untuk skeptisnya penonton ",
@@ -467,8 +514,10 @@ def _tulis_panjang(cfg, bahan, riset, durasi, batal, saat_token, log, gaya="twis
             posisi = bp["terakhir"] + _perintah_cta(cta)
         else:
             posisi = ("Ini bagian TENGAH: jangan membuka dengan hook atau sapaan baru, jangan menutup video, "
-                      "jangan bertanya ke penonton." + (" Akhiri bagian ini dengan kalimat penggantung yang bikin "
-                                                       "penasaran ke bagian berikutnya." if seru else ""))
+                      "jangan bertanya ke penonton. Kalimat pertama langsung hal baru yang menarik, bukan pengantar; "
+                      "jangan mengulang fakta atau angka dari bagian sebelumnya."
+                      + (" Akhiri bagian ini dengan kalimat penggantung yang bikin penasaran ke bagian berikutnya."
+                         if seru else ""))
         sambung = f"\nBagian sebelumnya berakhir dengan: «{' '.join(hasil[-1].split()[-60:])}»\n" \
                   "Lanjutkan dengan mulus tanpa mengulang isi sebelumnya." if hasil else ""
         sudah = sum(len(h.split()) for h in hasil)
@@ -489,7 +538,13 @@ def _tulis_panjang(cfg, bahan, riset, durasi, batal, saat_token, log, gaya="twis
         if teks:
             hasil.append(teks)
             bab.append({"judul": b["judul"].strip()[:60], "awal": " ".join(teks.split()[:8])})
-    return "\n\n".join(hasil), bab
+    naskah_jadi = buang_fakta_berulang("\n\n".join(hasil))
+    if len(naskah_jadi.split()) < 0.95 * sum(len(h.split()) for h in hasil):
+        log(f"Kalimat yang mengulang fakta dibuang: {sum(len(h.split()) for h in hasil)} → "
+            f"{len(naskah_jadi.split())} kata")
+    # awal bab harus tetap ada di naskah (chapter YouTube dicari dari 8 kata pertamanya)
+    bab = [b for b in bab if b["awal"] in " ".join(naskah_jadi.split())]
+    return naskah_jadi, bab
 
 
 def ringkas_shorts(cfg, naskah_panjang, batal=None, saat_token=None, gaya="twist", cta=""):
@@ -520,10 +575,10 @@ def rencana_reels(cfg, naskah_panjang, jumlah, batal=None, log=print):
     kolom = [f"fokus_reels_{i}" for i in range(1, jumlah + 1)]  # kolom datar: array membuat gemma mengulang token
     schema = {"type": "object", "properties": {k: {"type": "string"} for k in kolom}, "required": kolom}
     pesan = [{"role": "user", "content": (
-        f"Ini naskah video YouTube panjang tentang misteri/teori konspirasi:\n\n{naskah_panjang[:12000]}\n\n"
+        f"Ini naskah video YouTube panjang:\n\n{naskah_panjang[:12000]}\n\n"
         f"Dari naskah itu akan dibuat {jumlah} reels pendek yang memancing orang menonton video panjangnya. "
-        f"Tentukan fokus tiap reels: {jumlah} bagian BERBEDA yang paling bikin penasaran (misalnya satu bukti "
-        "tertentu, satu kejanggalan aneh, satu perbandingan yang mengejutkan, atau pertanyaan besarnya). Jangan ada "
+        f"Tentukan fokus tiap reels: {jumlah} bagian BERBEDA yang paling bikin penasaran (misalnya satu fakta "
+        "atau bukti tertentu, satu keanehan, satu perbandingan yang mengejutkan, atau pertanyaan besarnya). Jangan ada "
         "dua reels dengan fokus yang sama. Urutkan dari yang paling menarik.\n"
         "Tiap fokus: satu kalimat bahasa Indonesia yang menyebut bagian naskahnya secara spesifik (nama benda, "
         "tempat, atau kejadiannya).")}]
@@ -542,23 +597,35 @@ def rencana_reels(cfg, naskah_panjang, jumlah, batal=None, log=print):
     return fokus
 
 
-def teaser(cfg, naskah_panjang, fokus, durasi, batal=None, saat_token=None, cta=""):
-    """Naskah reels teaser: bukan ringkasan, tapi pancingan yang berhenti di titik paling penasaran."""
+def teaser(cfg, naskah_panjang, fokus, durasi, batal=None, saat_token=None, cta="", gaya=""):
+    """Naskah reels teaser: bukan ringkasan, tapi pancingan yang berhenti di titik paling penasaran.
+    Channel fakta (gaya sains/edukasi): penonton tetap mendapat satu fakta "wow" yang utuh supaya betah sampai akhir
+    — teaser yang cuma menggantung ("Tapi yang ditemukan berikutnya justru lebih aneh.") terasa kosong."""
     kata = target_kata(durasi)
-    aturan = f"""- Ini REELS TEASER untuk memancing penonton menonton video panjangnya, BUKAN ringkasan.
+    if gaya in GAYA_FAKTA:
+        aturan = f"""- Ini REELS untuk memancing penonton menonton video panjangnya, tapi penonton harus tetap mendapat satu hal "wow" yang utuh.
+- Fokus HANYA pada bagian ini: {fokus}
+- Kalimat pertama (maksimal 12 kata): fakta paling mengejutkan dari fokus itu yang bisa langsung dibayangkan, pakai angka atau perbandingan. Bukan "banyak yang yakin", bukan "tahukah kamu", bukan pengantar.
+- Kalimat kedua: kontras "tapi…" yang bikin penasaran.
+- Lalu dua atau tiga detail yang makin lama makin mengejutkan, kalimat pendek dan padat, tiap fakta disebut sekali saja.
+- Ungkap satu jawaban atau fakta "wow" sampai tuntas, lalu tutup dengan SATU pertanyaan lebih besar yang jawabannya ada di video panjang, misalnya "Lalu kenapa tubuh mereka tidak hancur? Jawabannya ada di video lengkapnya."
+- Semua nama, angka, dan fakta HANYA dari naskah video panjang di bawah. Jangan menambah fakta baru."""
+        sis = f"{_PERAN_FAKTA}\nGayamu: narator reels sains yang padat dan seru, bikin orang menonton sampai detik terakhir."
+    else:
+        aturan = f"""- Ini REELS TEASER untuk memancing penonton menonton video panjangnya, BUKAN ringkasan.
 - Fokus HANYA pada bagian ini: {fokus}
 - Kalimat pertama (maksimal 12 kata) langsung hook paling bikin penasaran dari fokus itu: pertanyaan atau klaim mengejutkan (klaim tetap diberi penanda seperti "katanya" atau "banyak yang yakin").
 - Sebut satu sampai tiga detail paling aneh atau mengejutkan dari fokus itu, bangun ketegangan, lempar pertanyaan.
 - JANGAN bongkar jawaban, twist, kesimpulan, atau penjelasan resminya. Berhenti di titik paling penasaran, misalnya "Tapi yang ditemukan berikutnya justru lebih aneh."
 - Semua nama, angka, dan fakta HANYA dari naskah video panjang di bawah. Jangan menambah fakta baru."""
+        sis = f"{_PERAN}\nGayamu: narator teaser misteri yang membuat orang tidak bisa berhenti penasaran."
     pesan = [{"role": "system", "content": (
-        f"{_PERAN}\nGayamu: narator teaser misteri yang membuat orang tidak bisa berhenti penasaran.\n\nATURAN:\n"
-        f"{aturan}\n{_ATURAN_UMUM}")}, {"role": "user", "content": (
+        f"{sis}\n\nATURAN:\n{aturan}\n{_ATURAN_UMUM}")}, {"role": "user", "content": (
         f"NASKAH VIDEO PANJANG:\n{naskah_panjang[:12000]}\n\n"
         f"Tulis naskah reels teaser sekitar {kata} kata dengan fokus: {fokus}"
         + (f"\nKalimat paling akhir persis ajakan ini: «{cta}»" if cta else ""))}]
     teks = ollama.chat(cfg, pesan, suhu=0.75, batal=batal, saat_token=saat_token, maks_token=int(kata * 3 + 200))
-    return bersihkan(teks)
+    return buang_fakta_berulang(bersihkan(teks))
 
 
 def short_dari_sumber(cfg, transkrip, tema, durasi, gaya_short="teaser", batal=None, saat_token=None, cta=""):
@@ -687,8 +754,8 @@ SCHEMA_CARI = {
                 "properties": {"no": {"type": "integer"}, "a": {"type": "string"}, "b": {"type": "string"},
                                "c": {"type": "string"}, "lihat": {"type": "string"}, "subjek": {"type": "string"},
                                "teks_layar": {"type": "string"}, "analogi": {"type": "string"},
-                               "jumlah": {"type": "integer"}},
-                "required": ["no", "a", "b", "c", "lihat", "subjek", "teks_layar", "analogi", "jumlah"],
+                               "jumlah": {"type": "integer"}, "latar": {"type": "string"}},
+                "required": ["no", "a", "b", "c", "lihat", "subjek", "teks_layar", "analogi", "jumlah", "latar"],
             },
         }
     },
@@ -877,6 +944,12 @@ def kata_kunci_adegan(cfg, judul, adegan, batal=None, log=print, subjek="", arti
             "pool\", \"Eiffel Tower\", \"car\", \"lava lamp\". Isi \"\" kalau tidak ada perbandingan.\n"
             "- jumlah: angka pada perbandingan itu sebagai bilangan bulat (1600 untuk \"1.600 gajah\", 3 untuk \"tiga "
             "Menara Eiffel\"); 0 kalau perbandingannya tanpa angka atau tidak ada perbandingan.\n"
+            "- latar: klip stock video dalam bahasa Inggris, 2-4 kata umum, untuk LATAR BERGERAK adegan itu: TEMPAT "
+            "nyata tempat hal yang dibahas berada, yang pasti ada di situs stock video, misalnya \"deep sea "
+            "underwater\" untuk palung laut atau lempeng di dasar samudra, \"volcano lava eruption\" untuk gunung "
+            "berapi, \"galaxy stars space\" untuk luar angkasa, \"jungle river aerial\" untuk hewan hutan tropis. "
+            "Harus tetap di DUNIA TOPIK video ini: jangan gurun, gunung, kota, awan, atau laboratorium kalau yang "
+            "dibahas bukan itu. Adegan pembanding (gajah, Everest) tetap memakai tempat topik utamanya.\n"
             "Kalimat ajakan (tonton, link di bawah, subscribe, tulis di kolom komentar): JANGAN ikon, tombol, logo, "
             "atau layar — tulis visual paling kuat tentang topik video, sama seperti adegan sebelumnya.\n"
             f"Jawab dengan nomor adegan yang sama.\n\nADEGAN:\n{daftar}")}]
@@ -889,7 +962,7 @@ def kata_kunci_adegan(cfg, judul, adegan, batal=None, log=print, subjek="", arti
             item["required"].append("artikel")
         for coba in range(3):
             try:
-                j = ollama.chat_json(cfg, pesan, schema, batal=batal, maks_token=150 * len(bagian) + 100,
+                j = ollama.chat_json(cfg, pesan, schema, batal=batal, maks_token=170 * len(bagian) + 100,
                                      suhu=0.3 + coba * 0.3)
             except (RuntimeError, ValueError) as e:
                 log(f"Kata kunci adegan {mulai + 1}-{mulai + len(bagian)} gagal ({e})")
@@ -904,6 +977,7 @@ def kata_kunci_adegan(cfg, judul, adegan, batal=None, log=print, subjek="", arti
                     hasil[no]["lihat"] = " ".join(str(item.get("lihat") or "").split())[:160]
                     hasil[no]["subjek"] = " ".join(str(item.get("subjek") or "").split())[:60]
                     hasil[no]["teks_layar"] = " ".join(str(item.get("teks_layar") or "").split()).upper()[:28]
+                    hasil[no]["latar"] = " ".join(str(item.get("latar") or "").split())[:50]
                     analogi = " ".join(str(item.get("analogi") or "").split())[:40]
                     if analogi:
                         hasil[no]["analogi"], hasil[no]["jumlah"] = analogi, max(0, _int(item.get("jumlah")))
@@ -919,7 +993,7 @@ def kata_kunci_adegan(cfg, judul, adegan, batal=None, log=print, subjek="", arti
     for i, h in enumerate(hasil):
         if h and (h["a"] or h["b"]):
             if not h["b"]:
-                h["b"] = cadangan(fakta)[i % 10]
+                h["b"] = h.get("latar") or cadangan(fakta)[i % 10]
         elif berhasil:
             dekat = min(berhasil, key=lambda j: (abs(j - i), j > i))  # seri: dahulukan adegan sebelumnya
             hasil[i] = {**{k: v for k, v in hasil[dekat].items() if k not in ("analogi", "jumlah")},

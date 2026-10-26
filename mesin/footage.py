@@ -62,10 +62,56 @@ BUKAN_SUBJEK = re.compile(
     r"carcass|slaughter|butcher|plucked|\bmeat\b|poultry market|chickens? in (a )?market|daging|cock ?fight|"
     r"chicken fight|sabung", re.I)
 _openverse_habis = 0.0  # waktu sampai Openverse boleh dipakai lagi setelah kena batas harian
+# Film arsip, siaran, dan ceramah: kartu judul, angka hitung mundur "31", kredit "Produced in Technicolor", wajah
+# narasumber. Di video sains muncul karena namanya kebetulan sama ("Mariana Trench" → film Perang Dunia II di
+# Kepulauan Mariana, "Chabar Dai Toa"). Hanya dipakai kalau narasi adegannya memang membahas masa lalu (ada tahunnya).
+ARSIP = re.compile(r"\b(1[89]\d\d|19[0-7]\d)\b|newsreel|propaganda|technicolor|\breels?\b|leathernecks?|"
+                   r"marine corps|\bnavy\b|\barmy\b|nippon|eiga|film corporation|universal news|pathe|"
+                   r"lecture|webinar|seminar|keynote|symposium|panel discussion|town hall|podcast|"
+                   r"\btalks?\b|beyond the data|culture of|safety training|training film|educational film|"
+                   # film koleksi arsip nasional AS ("Deep Sea Fishing in Florida (31-MP-611)", film rumahan Hoover)
+                   r"\b\d{2,3}-[a-z]{1,4}-\d+\b|home movie|kodacolor|kodachrome|national archives|"
+                   r"presidential library", re.I)
+# Kata umum di kueri latar yang tidak menentukan tempat ("deep sea underwater" → "deep sea", "underwater").
+_UMUM_LATAR = {"aerial", "view", "views", "drone", "close", "closeup", "up", "timelapse", "time", "lapse", "footage",
+               "video", "shot", "slow", "motion", "background", "scene", "landscape", "beautiful", "over", "into"}
 
 
 def _kata(teks):
     return [k for k in re.findall(r"[a-z0-9]+", (teks or "").lower()) if k not in KATA_UMUM]
+
+
+def arsip_tak_relevan(k, narasi):
+    """Film arsip/siaran/ceramah yang tidak dibutuhkan narasi (narasinya tidak menyebut tahun lampau)."""
+    if k.get("jenis") != "video" or not ARSIP.search(f"{k.get('judul') or ''} {k.get('teks') or ''}"):
+        return False
+    return not re.search(r"\b(1[0-9]\d\d|19[0-8]\d)\b", narasi or "")
+
+
+def cocok_judul(k, kueri):
+    """Judul/keterangan klip menyebut tempat yang dicari ("Underwater view of a coral reef" untuk "deep sea
+    underwater"). Klip latar yang TIDAK dinilai AI hanya dipakai kalau cocok begini."""
+    kata = [w for w in _kata(kueri) if w not in _UMUM_LATAR and len(w) >= 3]
+    teks = " ".join(_kata(f"{k.get('judul') or ''} {k.get('teks') or ''}"))
+    return any(w[:5] in teks for w in kata)
+
+
+def klip_latar(cfg, kueri, format_video, kecuali=(), narasi="", log=print, maks=4):
+    """Klip suasana untuk adegan yang tidak punya klip yang pas: dicari dengan kueri latar dari AI (tempat di dunia
+    topik video: "deep sea underwater"), adegan ini dulu lalu adegan-adegan terdekat. Dulu daftar cadangan tetap
+    ("desert dunes aerial", "mountains aerial") — narasi lempeng di dasar Samudra Pasifik tampil dengan unta di gurun.
+    Mengembalikan (kueri_terpakai, [kandidat ditandai cadangan])."""
+    for q in [x for x in dict.fromkeys(kueri) if x][:3]:
+        try:
+            ks = cari_kandidat(cfg, "", q, format_video, log, video=True)
+        except Exception as e:
+            log(f"  Klip latar “{q}” gagal dicari: {e}")
+            continue
+        cocok = [k for k in ks if k["jenis"] == "video" and k["id"] not in kecuali and cocok_judul(k, q)
+                 and not arsip_tak_relevan(k, narasi) and not BUKAN_SUBJEK.search(k.get("judul") or "")]
+        if cocok:
+            return q, [{**k, "cadangan": True, "kueri": q} for k in cocok[:maks]]
+    return "", []
 
 
 def _bersih_html(t):
@@ -1197,7 +1243,7 @@ def urutkan_untuk_adegan(cfg, narasi, q, format_video, terpakai, cek_gambar, bat
         m = BUKAN_SUBJEK.search(f"{k.get('judul') or ''} {k.get('teks') or ''}")
         return bool(m) and m.group(0).lower() not in narasi_kecil  # kecuali narasinya memang membahas itu
 
-    kandidat = [k for k in unik if not bukan_subjek(k)]
+    kandidat = [k for k in unik if not bukan_subjek(k) and not (cerah and arsip_tak_relevan(k, narasi))]
     # kata subjek VIDEO (untuk heuristik) — terpisah dari `subjek` ADEGAN yang dinilai AI. Dulu namanya sama, jadi
     # juri AI menerima "SUBJEK UTAMA: {'misteri', 'pendaratan', ...}" dan menilai cocok-tema, bukan cocok-adegan.
     kata_video = set(_kata(judul)) | set(_kata(" ".join(k.get("kueri", "") for k in topik[:1])))

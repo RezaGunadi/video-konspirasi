@@ -123,6 +123,14 @@ def _lapisan(img, d):
     porsi = float(depan.mean())
     if not 0.04 <= porsi <= 0.6:
         return None
+    # Benda depan harus SATU benda yang jelas lebih dekat dari latarnya. Peta, diagram, dan pemandangan datar
+    # menghasilkan "benda depan" berupa potongan acak (pulau, area terang) — saat kamera bergerak potongan itu
+    # bergeser sendiri dan gambarnya terlihat retak/terbelah (keluhan pengguna di peta Palung Mariana).
+    n, label, stat, _ = cv2.connectedComponentsWithStats(depan, connectivity=8)
+    if n < 2 or stat[1:, cv2.CC_STAT_AREA].max() < 0.75 * depan.sum():
+        return None
+    if float(d[depan > 0].mean() - d[depan == 0].mean()) < 0.35:
+        return None
     # lapisan depan diperlebar sedikit (ikut membawa tepi bendanya), dan HANYA area itu yang ditambal di lapisan
     # belakang: saat kamera diam tidak ada tambalan yang terlihat; saat bergerak hanya pita selebar geserannya
     r = max(5, int(0.012 * max(h, w)))
@@ -137,10 +145,12 @@ def _lapisan(img, d):
     return belakang, alpha
 
 
-def animasikan(src, frames, W, H, gerak, tujuan=None, fps=30, tutup_bawah=False, batal=None, encoder=None):
-    """Klip mp4 (tanpa audio) berdurasi `frames` frame dari satu foto dengan gerak kamera 2.5D. Di-cache."""
+def animasikan(src, frames, W, H, gerak, tujuan=None, fps=30, tutup_bawah=False, batal=None, encoder=None,
+               datar=False):
+    """Klip mp4 (tanpa audio) berdurasi `frames` frame dari satu foto dengan gerak kamera 2.5D. Di-cache.
+    datar=True (peta, diagram, dokumen): satu lapisan saja — gerak kamera halus tanpa memisahkan benda depan."""
     tujuan = Path(tujuan) if tujuan else F_KLIP / (
-        f"{hash_pendek('|'.join(map(str, [Path(src).stat().st_size, src, frames, W, H, gerak, tutup_bawah, 6])))}.mp4")
+        f"{hash_pendek('|'.join(map(str, [Path(src).stat().st_size, src, frames, W, H, gerak, tutup_bawah, datar, 7])))}.mp4")
     if tujuan.exists() and tujuan.stat().st_size > 1000:
         return tujuan
     img = cv2.imread(str(src), cv2.IMREAD_COLOR)
@@ -158,7 +168,7 @@ def animasikan(src, frames, W, H, gerak, tujuan=None, fps=30, tutup_bawah=False,
     d = cv2.resize(d, (nw, nh), interpolation=cv2.INTER_LINEAR)
     x0, y0 = (nw - Bw) // 2, (nh - Bh) // 2
     img, d = img[y0:y0 + Bh, x0:x0 + Bw], d[y0:y0 + Bh, x0:x0 + Bw]
-    lapis = _lapisan(img, d)
+    lapis = None if datar else _lapisan(img, d)
     cx, cy = Bw / 2, Bh / 2
     acak = float(int(hash_pendek(str(src))[:4], 16) % 628) / 100
 

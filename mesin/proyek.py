@@ -485,7 +485,8 @@ def l_naskah(p, cfg, batal):
             rc["gaya_short"], batal, saat_token, cta=p["opsi"]["cta"]), []
     elif teaser:
         p["naskah"], p["bab"] = naskah.teaser(cfg, p["sumber_teks"], p.get("sudut") or "bagian paling mengejutkan",
-                                              p["opsi"]["durasi"], batal, saat_token, cta=p["opsi"]["cta"]), []
+                                              p["opsi"]["durasi"], batal, saat_token, cta=p["opsi"]["cta"],
+                                              gaya=p["opsi"]["gaya_naskah"]), []
     elif ringkas:
         p["naskah"], p["bab"] = naskah.ringkas_shorts(cfg, p["sumber_teks"], batal, saat_token,
                                                       gaya=p["opsi"]["gaya_naskah"], cta=p["opsi"]["cta"]), []
@@ -837,6 +838,16 @@ def _frames_foto(p, kecuali=None):
     return foto, total
 
 
+def _kueri_latar(p, i):
+    """Kueri klip latar (tempat di dunia topik video) dari kata kunci AI: adegan i dulu, lalu adegan terdekat."""
+    hasil = []
+    for j in sorted(range(len(p["adegan"])), key=lambda j: (abs(j - i), j > i)):
+        q = ((p["adegan"][j].get("q") or {}).get("latar") or "").strip()
+        if q and q not in hasil:
+            hasil.append(q)
+    return hasil
+
+
 def _rencana_video(p, a, i, frames_adegan):
     """Tata visual "video + stiker" (meniru video referensi pengguna): potongan ±3,5 detik yang hampir semuanya klip
     video; foto yang TEPAT menurut AI ditempel sebagai stiker di atas klip; foto layar penuh hanya kalau perlu dan
@@ -1122,23 +1133,28 @@ def l_footage(p, cfg, batal):
                                                lihat=a["q"].get("lihat", ""), subjek=a["q"].get("subjek", ""),
                                                spesifik=bool(art) or _kunci_spesifik(a["q"].get("a"), p),
                                                video=video, cerah=o["gaya"] == "cerah")
-            if len(kand) < 2:  # kata kunci terlalu spesifik: tambah suasana umum
-                kand += footage.urutkan_untuk_adegan(cfg, a["teks"], {"a": "", "b": naskah.cadangan(_fakta(p))[i % 10]},
-                                                     o["format"], _dipakai(p), False, batal, video=video)
+            if len(kand) < 2:  # kata kunci terlalu spesifik: tambah suasana tempat topiknya
+                kand += footage.urutkan_untuk_adegan(cfg, a["teks"], {"a": "", "b": (_kueri_latar(p, i) or [
+                    naskah.cadangan(_fakta(p))[i % 10]])[0]}, o["format"], _dipakai(p), False, batal, video=video,
+                    cerah=o["gaya"] == "cerah")
             if video:
                 # klip yang layak dulu (AI hanya melihat sebagian), lalu foto & sisanya: 20 kandidat pertama disimpan
                 kand.sort(key=lambda k: -(footage.nilai_latar(k) + (1 if k["jenis"] == "video" else 0)))
                 bisa = [k for k in kand if k["jenis"] == "video" and (not o["cek_gambar"] or
                                                                      footage.nilai_latar(k) >= footage.LATAR_BAGUS)]
                 if not bisa:
-                    # tidak ada klip yang pas: klip suasana umum (hutan berkabut, langit malam, …) sebagai latar;
-                    # subjeknya tetap tampil lewat stiker foto yang tepat
-                    q_cad = naskah.cadangan(_fakta(p))[i % 10]
-                    ada = {k["id"] for k in kand}
-                    cad = [k for k in footage.cari_kandidat(cfg, "", q_cad, o["format"], lambda t: log(p, t),
-                                                           video=True) if k["jenis"] == "video" and k["id"] not in ada]
-                    log(p, f"  Tidak ada klip yang pas — {len(cad[:4])} klip suasana “{q_cad}” disiapkan sebagai latar")
-                    kand = [{**k, "cadangan": True} for k in cad[:4]] + kand
+                    # tidak ada klip yang pas: klip TEMPAT topiknya (dasar laut untuk lempeng Pasifik) sebagai latar,
+                    # judulnya harus cocok dengan kueri; subjeknya tetap tampil lewat stiker foto yang tepat
+                    kueri = _kueri_latar(p, i)
+                    if not kueri and not _fakta(p):  # proyek misteri lama: suasana kelam umum masih pas
+                        kueri = [naskah.cadangan(False)[i % 10]]
+                    q_cad, cad = footage.klip_latar(cfg, kueri, o["format"], {k["id"] for k in kand}, a["teks"],
+                                                    log=lambda t: log(p, t))
+                    if cad:
+                        log(p, f"  Tidak ada klip yang pas — {len(cad)} klip tempat “{q_cad}” disiapkan sebagai latar")
+                    else:
+                        log(p, "  Tidak ada klip yang pas — memakai klip adegan terdekat & foto ≤3 detik")
+                    kand = cad + kand
             if video and a["q"].get("analogi"):
                 # "setara dengan menumpuk 1.600 gajah": foto benda pembandingnya jadi stiker bertumpuk
                 kand = footage.kandidat_analogi(cfg, a["q"]["analogi"], a["teks"], o["cek_gambar"], batal,
@@ -1265,10 +1281,17 @@ def _unduh_stiker(p, a, s, gagal_unduh, batal):
     s.pop("stiker_bahan", None)
 
 
-def _foto_hidup(p, s, nomor, gerak, batal):
+_GAMBAR_DATAR = re.compile(r"\b(peta|map|maps|diagram|skema|schematic|grafik|graph|chart|infografis|infographic|"
+                           r"penampang|cross-?section|sketch|sketsa|ilustrasi|illustration|batimetri|bathymetr\w*|"
+                           r"dokumen|document|teks|text|tabel|table|lukisan|painting|poster|logo|ikon|icon)\b", re.I)
+
+
+def _foto_hidup(p, s, nomor, gerak, batal, k=None):
     """Opsi animasi "hidup": foto dijadikan klip 2.5D parallax (benda depan bergerak terpisah dari latar), bukan
-    zoom/pan biasa. Gagal (model belum ada, foto rusak) → foto apa adanya untuk zoom/pan."""
+    zoom/pan biasa. Gagal (model belum ada, foto rusak) → foto apa adanya untuk zoom/pan.
+    k = kandidatnya: peta/diagram/dokumen/lukisan (dari judul atau isi menurut AI) tidak dipisah jadi lapisan."""
     o, bahan = p["opsi"], s["bahan"]
+    datar = bool(k) and bool(_GAMBAR_DATAR.search(f"{k.get('judul') or ''} {k.get('isi_ai') or ''}"))
     if o.get("animasi", "hidup") != "hidup" or bahan["jenis"] != "gambar" or not hidup.tersedia():
         return bahan
     W, H = render.UKURAN[o["format"]]
@@ -1278,7 +1301,7 @@ def _foto_hidup(p, s, nomor, gerak, batal):
     try:
         klip = hidup.animasikan(bahan["file"], s["frames"] + 16, W, H,
                                 gerak or render._GILIRAN_GERAK[nomor % len(render._GILIRAN_GERAK)],
-                                fps=render.FPS, tutup_bawah=bool(bahan.get("tutup_bawah")), batal=batal)
+                                fps=render.FPS, tutup_bawah=bool(bahan.get("tutup_bawah")), batal=batal, datar=datar)
         return {"jenis": "video", "file": str(klip), "mulai": 0, "lebar": W, "tinggi": H}
     except Dibatalkan:
         raise
@@ -1392,7 +1415,8 @@ def l_render(p, cfg, batal):
                     # transisi hanya di shot pertama tiap adegan; gerak khusus (hentak/goyang) juga di shot pertama
                     transisi = rencana[i].get("transisi") if j == 0 else None
                     gerak = rencana[i].get("gerak") if j == 0 else None
-                    bahan = _foto_hidup(p, s, nomor, gerak, batal)
+                    bahan = _foto_hidup(p, s, nomor, gerak, batal, k=a["kandidat"][s["pilih"]] if
+                                        s.get("pilih") is not None and s["pilih"] < len(a["kandidat"]) else None)
                     if transisi == "zoom" and bahan["jenis"] == "video":
                         transisi = "kilat"  # zoom tembus dikerjakan zoompan, yang hanya dipakai untuk foto
                     try:

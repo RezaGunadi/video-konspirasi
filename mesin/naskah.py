@@ -36,8 +36,8 @@ GAYA_NASKAH = {
                  "temuan ilmiah jadi teka-teki yang dijawab satu per satu dengan bahasa yang gampang dipahami orang awam."),
         "aturan": """- Ikuti arahan dari TOPIK / CATATAN pembuat video, tetap dengan aturan di bawah.
 - Ini video FAKTA, bukan teori konspirasi atau opini. Semua isi harus benar menurut BAHAN FAKTA atau pengetahuan ilmiah yang sangat umum. Bedakan yang sudah pasti ("para ilmuwan menemukan", "hasil pengukuran menunjukkan") dari dugaan ilmiah ("para ilmuwan menduga", "kemungkinan besar"). Kalau ragu, jangan sebut angka.
-- HOOK = dua kalimat pertama, masing-masing maksimal 14 kata: fakta paling mengejutkan yang bisa langsung dibayangkan, lalu kontras "tapi…" yang memancing pertanyaan besar. Misalnya "Di dasar laut ini, tekanannya setara 1.600 gajah di atas satu titik. Tapi ada makhluk yang hidup santai di sana." JANGAN membuka dengan pengantar, definisi, sapaan, "tahukah kamu", "jika kamu berdiri di…", atau latar sejarah.
-- Kalimat ketiga: janji yang baru terjawab di akhir video, misalnya "Dan cara mereka bertahan jauh lebih aneh dari yang kamu kira."
+- HOOK = dua kalimat pertama, masing-masing maksimal 14 kata: fakta paling mengejutkan dari topik ini yang bisa langsung dibayangkan, lalu kontras "tapi…" yang memancing pertanyaan besar. Polanya seperti "Organisme terbesar di dunia bukan paus biru. Tapi sebuah hutan yang semua pohonnya berbagi satu akar." — tulis kalimatmu sendiri dari topik ini, jangan menyalin contoh. JANGAN membuka dengan pengantar, definisi, sapaan, "tahukah kamu", "jika kamu berdiri di…", atau latar sejarah.
+- Kalimat ketiga: janji yang baru terjawab di akhir video, dengan kata-katamu sendiri (polanya seperti "Dan alasannya mengubah cara kita memandang hutan.").
 - Lalu jelaskan kenapa itu aneh: bagaimana biasanya, lalu apa yang berbeda di sini ("Sungai besar biasanya berkelok dan berpindah. Tapi Nil tidak.").
 - Susun sebagai rangkaian pertanyaan yang dijawab satu per satu. Tiap jawaban membuka pertanyaan berikutnya, dan tiap paragraf diakhiri pancingan ke paragraf berikutnya ("Tapi itu belum yang paling aneh.", "Lalu dari mana tekanan sebesar itu?"). Urutkan dari yang mengejutkan ke yang PALING mengejutkan; jawaban hook disimpan untuk menjelang akhir.
 - Untuk konsep yang sulit, pakai analogi sehari-hari ("bayangkan selang taman yang dibiarkan menyala", "cara kerjanya mirip lampu lava raksasa") dan pembanding skala yang mudah dibayangkan ("seluas 32 ribu kolam renang olimpiade").
@@ -608,7 +608,7 @@ def teaser(cfg, naskah_panjang, fokus, durasi, batal=None, saat_token=None, cta=
 - Kalimat pertama (maksimal 12 kata): fakta paling mengejutkan dari fokus itu yang bisa langsung dibayangkan, pakai angka atau perbandingan. Bukan "banyak yang yakin", bukan "tahukah kamu", bukan pengantar.
 - Kalimat kedua: kontras "tapi…" yang bikin penasaran.
 - Lalu dua atau tiga detail yang makin lama makin mengejutkan, kalimat pendek dan padat, tiap fakta disebut sekali saja.
-- Ungkap satu jawaban atau fakta "wow" sampai tuntas, lalu tutup dengan SATU pertanyaan lebih besar yang jawabannya ada di video panjang, misalnya "Lalu kenapa tubuh mereka tidak hancur? Jawabannya ada di video lengkapnya."
+- Ungkap satu jawaban atau fakta "wow" sampai tuntas, lalu tutup dengan SATU pertanyaan lebih besar yang jawabannya ada di video panjang (polanya seperti "Lalu kenapa akarnya tidak pernah mati? Jawabannya ada di video lengkapnya." — dengan kata-katamu sendiri dari topik ini).
 - Semua nama, angka, dan fakta HANYA dari naskah video panjang di bawah. Jangan menambah fakta baru."""
         sis = f"{_PERAN_FAKTA}\nGayamu: narator reels sains yang padat dan seru, bikin orang menonton sampai detik terakhir."
     else:

@@ -185,6 +185,11 @@ Meniru gaya video konspirasi/berita YouTube yang potongannya cepat:
 - **Foto yang tepat jadi stiker** di atas klip: bingkai putih, bayangan, sedikit miring, label kuning berisi subjek
   adegan, muncul "meletup" dengan bunyi *plop*, lalu mengambang pelan. Di Shorts letaknya di tengah atas (tidak
   menutupi subtitle); di YouTube bergantian kiri/kanan. Stiker menunggu judul hook di 3 detik pertama hilang.
+- **Analogi divisualkan**: narasi "setara dengan menumpuk 1.600 gajah" → AI menandai benda pembandingnya & jumlahnya,
+  bendanya dipotong dari latar (model ISNet, ±180 MB, diunduh otomatis ke `tools/rembg` saat pertama dipakai, jalan di
+  CPU ±2 detik per foto) lalu ditumpuk jadi gunungan berlabel "×1.600". Foto yang bendanya tidak utuh (close-up
+  wajah, terpotong tepi foto, kecil di tengah pemandangan) ditolak otomatis; benda yang tidak bisa dipotong (gunung,
+  lapangan) ditumpuk sebagai foto berbingkai.
 - **Foto layar penuh maksimal 3 detik**, hanya kalau klipnya habis atau sesekali untuk foto yang sangat kuat (total
   foto layar penuh dijaga di bawah ±25%).
 - Di halaman proyek tiap shot menampilkan stikernya; tombol **✖ Stiker** membuang stiker (lalu Render ulang).

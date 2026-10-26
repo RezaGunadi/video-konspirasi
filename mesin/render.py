@@ -148,10 +148,54 @@ def _tumpukan(kartu, n, Image):
     return kanvas
 
 
-def buat_stiker(sumber, label, format_video, nomor, folder, tumpuk=0):
+def _baris_gunungan(tumpuk):
+    """Jumlah salinan per baris (bawah → atas) untuk tumpukan potongan benda: 2 → menara, 3 → 2+1, banyak → 3+2+1."""
+    return {2: (1, 1), 3: (2, 1), 4: (3, 1), 5: (3, 2)}.get(tumpuk, (3, 2, 1))
+
+
+def _gunungan(png, tumpuk, maks_w, maks_h, tepi, Image, ImageFilter, ImageOps):
+    """Potongan benda tanpa latar (gajah utuh) bergaris tepi putih seperti stiker potongan; tumpuk ≥2 → beberapa
+    salinan disusun jadi gunungan (baris atas menindih baris bawah), dicerminkan & dimiringkan bergantian supaya
+    tidak kelihatan seperti salinan. Seluruhnya muat di kotak maks_w x maks_h."""
+    benda = Image.open(png).convert("RGBA")
+    baris = _baris_gunungan(tumpuk) if tumpuk >= 2 else (1,)
+    dx, dy = 0.62, 0.58  # jarak antarsalinan (sebaris) & antarbaris, relatif terhadap lebar/tinggi benda
+    lebar_u = (baris[0] - 1) * dx * benda.width + benda.width
+    tinggi_u = (len(baris) - 1) * dy * benda.height + benda.height
+    s = min((maks_w - 2 * tepi) / lebar_u, (maks_h - 2 * tepi) / tinggi_u)
+    benda = benda.resize((max(1, round(benda.width * s)), max(1, round(benda.height * s))), Image.LANCZOS)
+    # garis tepi putih: alfa dilebarkan `tepi` piksel lalu diisi putih di bawah potongannya
+    alfa = benda.getchannel("A").point(lambda a: 255 if a > 60 else 0)
+    pad = tepi + 2
+    luas = Image.new("L", (benda.width + 2 * pad, benda.height + 2 * pad), 0)
+    luas.paste(alfa, (pad, pad))
+    luas = luas.filter(ImageFilter.MaxFilter(2 * (tepi // 2) + 1)).filter(ImageFilter.MaxFilter(2 * (tepi // 2) + 1))
+    luas = luas.filter(ImageFilter.GaussianBlur(0.8))
+    satu = Image.new("RGBA", luas.size, (255, 255, 255, 0))
+    satu.putalpha(luas)
+    satu.alpha_composite(benda, (pad, pad))
+    if len(baris) == 1 and baris[0] == 1:
+        return satu
+    lw, lh = (baris[0] - 1) * dx * benda.width + satu.width, (len(baris) - 1) * dy * benda.height + satu.height
+    kanvas = Image.new("RGBA", (int(lw) + 2 * tepi, int(lh) + 2 * tepi), (0, 0, 0, 0))
+    k = 0
+    for r, n in enumerate(baris):  # baris paling bawah digambar dulu; baris atas "ditumpuk" di atasnya
+        y = kanvas.height - tepi - satu.height - r * dy * benda.height
+        x0 = (kanvas.width - ((n - 1) * dx * benda.width + satu.width)) / 2
+        for c in range(n):
+            salinan = ImageOps.mirror(satu) if k % 2 else satu
+            salinan = salinan.rotate((-3, 4, -2, 3, -4, 2)[k % 6], resample=Image.BICUBIC, expand=True)
+            kanvas.alpha_composite(salinan, (max(0, int(x0 + c * dx * benda.width)), max(0, int(y))))
+            k += 1
+    return kanvas
+
+
+def buat_stiker(sumber, label, format_video, nomor, folder, tumpuk=0, potongan=None):
     """Foto jadi stiker seperti di video berita/konspirasi YouTube: bingkai putih bersudut bulat, bayangan, sedikit
     miring, label kuning di pojok bawah. Disimpan sebagai urutan PNG transparan berisi animasi muncul.
     tumpuk = jumlah dalam analogi (1.600 gajah): ≥2 → beberapa salinan foto ditumpuk ke atas (maksimal 4).
+    potongan = PNG benda tanpa latar (potong.potong): dipakai sebagai stiker potongan bergaris putih, dan untuk
+    tumpuk ≥2 disusun jadi gunungan benda (gajah ditumpuk), bukan tumpukan foto berbingkai.
     Mengembalikan (pola_png, x, y): posisi kiri-atas kanvas stiker di layar."""
     from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
     W, H = UKURAN[format_video]
@@ -159,20 +203,28 @@ def buat_stiker(sumber, label, format_video, nomor, folder, tumpuk=0):
     n_tumpuk = 1 if tumpuk < 2 else min(4, tumpuk)
     # Shorts: di tengah atas (subtitle ada di ±70% tinggi layar); YouTube: di samping, kiri/kanan bergantian.
     maks_w, maks_h = (int(W * 0.72), int(H * 0.32)) if tegak else (int(W * 0.40), int(H * 0.50))
-    if n_tumpuk > 1:  # menara n kartu harus muat di kotak yang sama (lebih tinggi sedikit di Shorts)
-        maks_h = int((H * (0.40 if tegak else 0.62)) / (1 + 0.4 * (n_tumpuk - 1)))
-        maks_w = int(maks_w * 0.8)
-    foto = ImageOps.exif_transpose(Image.open(sumber)).convert("RGB")
-    s = min(maks_w / foto.width, maks_h / foto.height)
-    foto = foto.resize((max(1, round(foto.width * s)), max(1, round(foto.height * s))), Image.LANCZOS)
-    tepi = max(10, round(min(W, H) * 0.014))
-    kartu = Image.new("RGBA", (foto.width + 2 * tepi, foto.height + 2 * tepi), (255, 255, 255, 255))
-    kartu.paste(foto, (tepi, tepi))
-    bulat = Image.new("L", kartu.size, 0)
-    ImageDraw.Draw(bulat).rounded_rectangle((0, 0, kartu.width - 1, kartu.height - 1), radius=tepi, fill=255)
-    kartu.putalpha(bulat)
-    if n_tumpuk > 1:
-        kartu = _tumpukan(kartu, n_tumpuk, Image)
+    if potongan and Path(potongan).exists():
+        tepi = max(6, round(min(W, H) * 0.009))
+        if n_tumpuk > 1:  # gunungan boleh lebih besar (inti adegannya), tapi tidak menutupi teks besar di atas
+            maks_w, maks_h = (int(W * 0.80), int(H * 0.38)) if tegak else (int(W * 0.44), int(H * 0.55))
+        kartu = _gunungan(potongan, tumpuk, maks_w, maks_h, tepi, Image, ImageFilter, ImageOps)
+        diputar = False  # gunungan sudah miring per salinan; potongan tunggal tetap tegak (tidak "melayang")
+    else:
+        diputar = n_tumpuk == 1  # tumpukan sudah miring per kartu
+        if n_tumpuk > 1:  # menara n kartu harus muat di kotak yang sama (lebih tinggi sedikit di Shorts)
+            maks_h = int((H * (0.40 if tegak else 0.62)) / (1 + 0.4 * (n_tumpuk - 1)))
+            maks_w = int(maks_w * 0.8)
+        foto = ImageOps.exif_transpose(Image.open(sumber)).convert("RGB")
+        s = min(maks_w / foto.width, maks_h / foto.height)
+        foto = foto.resize((max(1, round(foto.width * s)), max(1, round(foto.height * s))), Image.LANCZOS)
+        tepi = max(10, round(min(W, H) * 0.014))
+        kartu = Image.new("RGBA", (foto.width + 2 * tepi, foto.height + 2 * tepi), (255, 255, 255, 255))
+        kartu.paste(foto, (tepi, tepi))
+        bulat = Image.new("L", kartu.size, 0)
+        ImageDraw.Draw(bulat).rounded_rectangle((0, 0, kartu.width - 1, kartu.height - 1), radius=tepi, fill=255)
+        kartu.putalpha(bulat)
+        if n_tumpuk > 1:
+            kartu = _tumpukan(kartu, n_tumpuk, Image)
     label = " ".join((label or "").split()).upper()
     if label:
         # label tumpukan ("×1.600") adalah inti pesannya, jadi jauh lebih besar dari label subjek biasa
@@ -190,9 +242,11 @@ def buat_stiker(sumber, label, format_video, nomor, folder, tumpuk=0):
         ImageDraw.Draw(tag).text((pad - kotak[0], pad - kotak[1]), label, font=huruf, fill=(10, 10, 10, 255))
         gabung = Image.new("RGBA", (kartu.width, kartu.height + tag.height // 2), (0, 0, 0, 0))
         gabung.alpha_composite(kartu, (0, 0))
-        gabung.alpha_composite(tag, (2 * tepi, kartu.height - tag.height // 2))
+        # gunungan potongan: jumlahnya di tengah bawah, seperti papan di kaki tumpukan
+        gabung.alpha_composite(tag, ((kartu.width - tag.width) // 2 if potongan and n_tumpuk > 1 else 2 * tepi,
+                                     kartu.height - tag.height // 2))
         kartu = gabung
-    if n_tumpuk == 1:  # tumpukan sudah miring per kartu
+    if diputar:
         kartu = kartu.rotate(_SUDUT_STIKER[nomor % len(_SUDUT_STIKER)], resample=Image.BICUBIC, expand=True)
     geser = (round(W * 0.008), round(W * 0.012))
     ruang = round(W * 0.03)
@@ -292,7 +346,7 @@ def buat_shot(bahan, frames, format_video, gaya, isi_layar, nomor, tujuan, batal
     if stiker:
         # Ditempel SETELAH grade & kabut: stikernya tetap tajam dan berwarna seperti tempelan editor.
         pola, sx, sy = buat_stiker(stiker["file"], stiker.get("label", ""), format_video, nomor, Path(tujuan).parent,
-                                   tumpuk=stiker.get("tumpuk", 0))
+                                   tumpuk=stiker.get("tumpuk", 0), potongan=stiker.get("potongan"))
         idx = masuk.count("-i")
         masuk = [*masuk, "-framerate", str(FPS), "-start_number", "0", "-i", pola]
         efek_akhir += (f"[e];[{idx}:v]format=rgba,setpts=PTS+{stiker.get('tunda', 0.12):.3f}/TB[s];"

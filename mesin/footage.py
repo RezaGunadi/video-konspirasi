@@ -17,12 +17,14 @@ import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from urllib.parse import unquote, urlencode
 
 import requests
 
-from . import ollama
-from .alat import CACHE, baca_json, ffmpeg, font_ffmpeg, hash_pendek, http_get, peramban, probe, tulis_json, unduh
+from . import ollama, potong
+from .alat import (CACHE, Dibatalkan, baca_json, ffmpeg, font_ffmpeg, hash_pendek, http_get, peramban, probe,
+                   tulis_json, unduh)
 
 F_CARI = CACHE / "cari"
 F_ASET = CACHE / "aset"
@@ -895,7 +897,18 @@ def nilai_heuristik(k, format_video, terpakai, subjek=(), video=False):
 
 
 def thumb_lokal(k):
-    """Unduh thumbnail kecil (dipakai AI untuk melihat & ditampilkan di GUI)."""
+    """Unduh thumbnail kecil (dipakai AI untuk melihat & ditampilkan di GUI). Kandidat yang bendanya sudah dipotong
+    dari latar (stiker analogi) dilihat AI sebagai potongannya di atas latar abu terang — persis yang akan tampil."""
+    if k.get("potongan") and Path(k["potongan"]).exists():
+        tujuan = F_THUMB / f"potong-{hash_pendek(k['potongan'])}.jpg"
+        if not tujuan.exists():
+            from PIL import Image
+            im = Image.open(k["potongan"])
+            im.thumbnail((512, 512))
+            latar = Image.new("RGB", im.size, (232, 232, 232))
+            latar.paste(im, (0, 0), im)
+            latar.save(tujuan, quality=88)
+        return tujuan
     tujuan = F_THUMB / f"{hash_pendek(k['id'])}.jpg"
     if tujuan.exists():
         return tujuan
@@ -1251,10 +1264,40 @@ def urutkan_untuk_adegan(cfg, narasi, q, format_video, terpakai, cek_gambar, bat
     return kandidat
 
 
+def _potong_analogi(semua, benda, batal, log, maks=4):
+    """Benda utuh dipotong dari latarnya untuk ditumpuk menjadi gunungan. Foto yang bendanya close-up, menempel di
+    tepi (gunung, lanskap), atau kecil di tengah pemandangan ditolak penyaring potongan → tidak masuk."""
+    hasil, tolak = [], []
+    for k in semua[:8]:
+        if batal:
+            batal.cek()
+        try:
+            b = siapkan(k, MAKS_FOTO, batal)
+            if not b:
+                continue
+            png, alasan = potong.potong(b["file"])
+        except Dibatalkan:
+            raise
+        except Exception as e:  # model belum bisa diunduh/dijalankan: pakai foto berbingkai seperti dulu
+            log(f"  Pemotong latar tidak bisa dipakai ({e}) — foto “{benda}” ditumpuk berbingkai")
+            return []
+        if png:
+            hasil.append({**k, "potongan": png})
+            if len(hasil) >= maks:
+                break
+        else:
+            tolak.append(alasan)
+    if tolak:
+        log(f"  Potongan “{benda}”: {len(hasil)} lolos, {len(tolak)} ditolak ({'; '.join(sorted(set(tolak))[:3])})")
+    return hasil
+
+
 def kandidat_analogi(cfg, benda, narasi, cek_gambar, batal=None, log=print):
-    """Foto benda PEMBANDING dalam analogi narasi ("setara dengan menumpuk 1.600 gajah" → African elephant), untuk
-    ditampilkan sebagai stiker bertumpuk. Hanya foto (bukan klip), satu benda utuh yang jelas; dinilai AI kalau
-    cek_gambar. Mengembalikan kandidat terbaik dulu, ditandai analogi=True."""
+    """Benda PEMBANDING dalam analogi narasi ("setara dengan menumpuk 1.600 gajah" → African elephant), untuk
+    ditampilkan sebagai stiker bertumpuk. Hanya foto (bukan klip). Utamanya POTONGAN benda utuh tanpa latar (kunci
+    "potongan") yang ditumpuk menjadi gunungan; kalau tidak ada yang bisa dipotong utuh (gunung, gedung), foto
+    berbingkai yang menampilkan bendanya utuh. Dinilai AI kalau cek_gambar. Mengembalikan kandidat terbaik dulu,
+    ditandai analogi=True."""
     tugas = [lambda: wikimedia(benda), lambda: openverse(benda)]
     if cfg.get("sumber_web") in ("semua", "berlisensi"):
         tugas.append(lambda: web_bing(benda, lisensi=cfg.get("sumber_web") == "berlisensi"))
@@ -1271,16 +1314,30 @@ def kandidat_analogi(cfg, benda, narasi, cek_gambar, batal=None, log=print):
     for k in semua:
         k["skor_h"] = nilai_heuristik(k, "16:9", set(), set(_kata(benda)))
     semua.sort(key=lambda k: -k["skor_h"])
+    potongan = _potong_analogi(semua, benda, batal, log) if potong.tersedia() and semua else []
     if not cek_gambar or not semua:
-        return semua[:3]
-    skor = nilai_ai(cfg, narasi, semua[:4], batal, lihat=f"foto {benda} yang jelas: satu benda/makhluk utuh, bukan "
-                    "kartun, bukan diagram, bukan kerumunan", subjek=benda, spesifik=True)
-    for k, s in zip(semua[:4], skor or []):
-        if s:
-            k["skor_ai"], k["isi_ai"] = s[0], s[1]
-    tepat = [k for k in semua[:4] if (k.get("skor_ai") or 0) >= SKOR_BAGUS]
-    log(f"  Analogi “{benda}”: {len(tepat)} foto yang pas" + (f" ({tepat[0].get('isi_ai')})" if tepat else ""))
-    return tepat
+        return (potongan or semua)[:3]
+    ronde = []
+    if potongan:
+        ronde.append((potongan, f"{benda} UTUH (seluruh badan/bentuknya terlihat dari ujung ke ujung, tidak "
+                                "terpotong) yang sudah dipisahkan dari latarnya; satu benda/makhluk yang jelas, bukan "
+                                "sebagian atau close-up, bukan kartun, bukan benda/hewan lain"))
+    dipotong = {identitas(k) for k in potongan}
+    ronde.append(([k for k in semua if identitas(k) not in dipotong][:4],
+                  f"foto {benda} yang jelas: seluruh benda/makhluknya terlihat utuh (tidak terpotong tepi foto, bukan "
+                  "close-up bagian), bukan kartun, bukan diagram, bukan kerumunan"))
+    for calon, lihat in ronde:  # foto berbingkai hanya dinilai kalau tidak ada potongan yang pas
+        skor = nilai_ai(cfg, narasi, calon[:4], batal, lihat=lihat, subjek=benda, spesifik=True)
+        for k, s in zip(calon[:4], skor or []):
+            if s:
+                k["skor_ai"], k["isi_ai"] = s[0], s[1]
+        tepat = sorted((k for k in calon[:4] if (k.get("skor_ai") or 0) >= SKOR_BAGUS), key=lambda k: -k["skor_ai"])
+        if tepat:
+            jenis = "potongan utuh" if tepat[0].get("potongan") else "foto berbingkai"
+            log(f"  Analogi “{benda}”: {len(tepat)} {jenis} yang pas ({tepat[0].get('isi_ai')})")
+            return tepat
+    log(f"  Analogi “{benda}”: tidak ada foto yang pas")
+    return []
 
 
 # ---------------------------------------------------------------- unduh / potong

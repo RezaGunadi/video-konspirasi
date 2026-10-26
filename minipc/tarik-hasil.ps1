@@ -11,19 +11,25 @@ foreach ($p in $pekerja) {
     try {
         # Tanpa tanda kutip & kurung kurawal: PowerShell 5.1 mengacaknya saat meneruskan argumen ke ssh.exe
         # ("${d%/}" pernah sampai sebagai "$d%/" sehingga nama folder berakhiran "/%/").
+        # baris: "<folder> <waktu deskripsi.txt>"; video yang dibuat ulang punya waktu baru dan diunduh lagi
         $siap = ssh -i $kunci -o BatchMode=yes -o ConnectTimeout=8 $p.host `
-            'cd ~/video-konspirasi/output 2>/dev/null && for d in */; do test -f $d/deskripsi.txt && basename $d; done'
+            'cd ~/video-konspirasi/output 2>/dev/null && for d in */; do test -f $d/deskripsi.txt && echo $(basename $d) $(stat -c %Y $d/deskripsi.txt); done'
     } catch {
         Write-Host "$($p.nama) ($($p.host)) tidak terjangkau: $_" -ForegroundColor Yellow
         continue
     }
     $baru = 0
-    foreach ($f in $siap) {
-        if ($f -and -not (Test-Path (Join-Path $tujuan $f))) {
-            Write-Host "Mengunduh $($p.nama)\$f ..."
-            scp -q -r -i $kunci -o BatchMode=yes "$($p.host):video-konspirasi/output/$f" $tujuan
-            $baru++
-        }
+    foreach ($baris in $siap) {
+        if (-not $baris) { continue }
+        $f, $versi = $baris -split ' ', 2
+        $lokal = Join-Path $tujuan $f
+        $tanda = Join-Path $lokal '.versi'
+        if ((Test-Path $tanda) -and ((Get-Content $tanda -Raw).Trim() -eq $versi)) { continue }
+        Write-Host "Mengunduh $($p.nama)\$f ..."
+        if (Test-Path $lokal) { Remove-Item -Recurse -Force $lokal }
+        scp -q -r -i $kunci -o BatchMode=yes "$($p.host):video-konspirasi/output/$f" $tujuan
+        Set-Content -Path $tanda -Value $versi -Encoding ascii
+        $baru++
     }
-    Write-Host "$($p.nama): $baru video baru, total $(@($siap).Count) di mini PC -> $tujuan" -ForegroundColor Green
+    Write-Host "$($p.nama): $baru video baru/diperbarui, total $(@($siap).Count) di mini PC -> $tujuan" -ForegroundColor Green
 }

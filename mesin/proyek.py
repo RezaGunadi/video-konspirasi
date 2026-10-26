@@ -1253,6 +1253,8 @@ def _unduh_stiker(p, a, s, gagal_unduh, batal):
         except Exception:
             bahan = None
         if bahan and bahan["jenis"] == "gambar":
+            if k.get("potongan") and os.path.exists(k["potongan"]):  # benda analogi tanpa latar (gunungan gajah)
+                bahan["potongan"] = k["potongan"]
             s["stiker"], s["stiker_bahan"] = x, bahan
             return
         gagal_unduh.add(k["id"])
@@ -1370,7 +1372,8 @@ def l_render(p, cfg, batal):
                     # stiker analogi: labelnya jumlahnya ("×1.600"), bukan subjek adegan
                     label = (f"×{tumpuk:,}".replace(",", ".") if tumpuk > 1 else "") if "tumpuk" in s else \
                         _label_stiker(a["q"].get("subjek"))
-                    stiker = {"file": s["stiker_bahan"]["file"], "label": label, "tunda": tunda, "tumpuk": tumpuk}
+                    stiker = {"file": s["stiker_bahan"]["file"], "label": label, "tunda": tunda, "tumpuk": tumpuk,
+                              "potongan": s["stiker_bahan"].get("potongan")}
             muncul = acara.get((i, j))
             maskot_shot = {**muncul, "file": gambar_maskot[muncul["pose"]]} if muncul else None
             tujuan = kerja / f"shot-{i:03d}-{j}.mp4"

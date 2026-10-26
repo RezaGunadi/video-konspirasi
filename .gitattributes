@@ -1,0 +1,5 @@
+* text=auto
+# skrip Windows harus CRLF supaya cmd/PowerShell di laptop & mini PC membacanya benar
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.png binary

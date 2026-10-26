@@ -1,0 +1,13 @@
+flask
+waitress
+edge-tts
+requests
+opencv-python-headless
+faster-whisper
+# Opsional — mode Re-create: menyamakan warna suara dengan video sumber (OpenVoice V2 di D:\tools\openvoice)
+# pip install --index-url https://download.pytorch.org/whl/cpu torch
+librosa
+soundfile
+# Opsional — gerak visual "Hidup" (foto 2.5D parallax, model Depth Anything V2 kecil di CPU, butuh torch di atas)
+transformers<5
+pillow

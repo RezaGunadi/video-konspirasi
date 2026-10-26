@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Konspirasi AI</title>
+<link rel="stylesheet" href="/aset/style.css">
+</head>
+<body>
+<header>
+  <h1>🕵️ Video Konspirasi AI</h1>
+  <div id="chip" class="chips"></div>
+  <button class="ghost" id="btnSetelan">⚙️ Setelan</button>
+</header>
+
+<main>
+  <section class="kartu" id="formBaru">
+    <h2>Buat video baru</h2>
+
+    <div class="seg" id="segMode">
+      <button data-v="tulis" class="aktif">🤖 AI tulis naskah</button>
+      <button data-v="bacakan">📜 Bacakan teks saya</button>
+      <button data-v="recreate">♻️ Re-create video panjang</button>
+    </div>
+    <p class="bantu" id="bantuMode"></p>
+    <div id="kolomGayaNaskah">
+      <label class="judul-kolom" for="gaya_naskah">Gaya cerita</label>
+      <select id="gaya_naskah">
+        <option value="sains">🔭 Sains &amp; penemuan: fakta mengejutkan dijawab ilmuwan satu per satu, dengan analogi &amp; angka (channel fakta)</option>
+        <option value="meyakinkan">🎙️ Meyakinkan: host ngobrol ke kamera, fakta tercatat disambung jadi kecurigaan "kebetulan?"</option>
+        <option value="twist">🔥 Plot twist: seru seperti membongkar kasus, twist di akhir</option>
+        <option value="bangun_teori">🧩 Bangun teori: bukti demi bukti (raksasa, peradaban hilang…), ditutup "belum terbukti"</option>
+        <option value="seimbang">📚 Seimbang: edukatif, teori lalu penjelasan ilmiah</option>
+        <option value="edukasi">🦖 Edukasi: fakta sains seru, tebak-tebakan lalu jawabannya (asal-usul hewan, dll.)</option>
+      </select>
+    </div>
+
+    <div id="kolomTopik">
+    <div class="baris antara">
+      <span class="judul-kolom" style="margin:0">Topik / naskah</span>
+      <button class="ghost kecil" id="btnIde" type="button">💡 Ide topik konspirasi</button>
+    </div>
+    <textarea id="teks" rows="7"></textarea>
+    <div class="baris">
+      <label class="tombol-file">📂 Ambil dari file .txt
+        <input type="file" id="fileTxt" accept=".txt,text/plain" multiple hidden>
+      </label>
+      <label class="cek"><input type="checkbox" id="perBaris"> Tiap baris = 1 video</label>
+    </div>
+    </div>
+
+    <div id="kolomRecreate" hidden>
+      <label class="judul-kolom" for="rcSumber">Video panjang sumber</label>
+      <select id="rcSumber"></select>
+      <div id="rcBarisFile" class="baris" hidden>
+        <label class="tombol-file">🎞️ Pilih file video (mp4/mov/mkv)
+          <input type="file" id="rcFile" accept="video/*" hidden>
+        </label>
+        <span class="bantu" id="rcNamaFile">Belum ada file</span>
+      </div>
+      <label class="judul-kolom" for="rcTema">Tema tiap short (satu tema per baris = satu short)</label>
+      <textarea id="rcTema" rows="4" placeholder="Contoh:&#10;Rujm el-Hiri, Roda Raksasa di Golan&#10;Garam Himalaya yang katanya mirip sel darah&#10;Bagaimana makhluk hidup bisa membatu&#10;&#10;Kosongkan kalau mau AI yang memilih temanya."></textarea>
+      <div class="grid2">
+        <div>
+          <label class="judul-kolom" for="rcJumlah">Kalau tema kosong: jumlah short</label>
+          <select id="rcJumlah">
+            <option value="2">2 short</option><option value="3" selected>3 short</option>
+            <option value="4">4 short</option><option value="5">5 short</option><option value="6">6 short</option>
+          </select>
+        </div>
+        <div>
+          <label class="judul-kolom" for="rcDurasi">Panjang tiap short</label>
+          <select id="rcDurasi">
+            <option value="30">± 30 detik</option><option value="45" selected>± 45 detik</option>
+            <option value="60">± 1 menit</option><option value="90">± 1,5 menit</option>
+          </select>
+        </div>
+      </div>
+      <label class="judul-kolom" for="rcGaya">Gaya short</label>
+      <select id="rcGaya">
+        <option value="teaser">🪝 Teaser: bikin penasaran, jawabannya di video panjang</option>
+        <option value="mandiri">🎬 Mandiri: cerita singkat yang tuntas</option>
+      </select>
+      <label class="judul-kolom" for="rcCta">Ajakan di akhir tiap short</label>
+      <textarea id="rcCta" rows="2"></textarea>
+      <label class="cek"><input type="checkbox" id="rcSamakan" checked> Samakan suara dengan video sumber (biar tidak terdengar seperti 2 orang)</label>
+      <div id="rcBarisIzin" hidden>
+        <label class="cek"><input type="checkbox" id="rcIzin"> Video &amp; suara di video ini milik saya, atau saya sudah punya izin pemiliknya — warna suaranya boleh ditiru</label>
+        <label class="cek"><input type="checkbox" id="rcTutup"> Video sumber ada subtitle/teks di bagian bawah — samarkan</label>
+        <p class="bantu" id="rcInfoSuara"></p>
+      </div>
+      <p class="bantu">Naskah tiap short ditulis ulang dari isi video sumber sesuai temanya, lalu dibacakan ulang.
+        Visualnya diambil dari bagian video sumber yang membahas hal yang sama. Video dari aplikasi ini memakai
+        foto aslinya (tanpa subtitle lama), dan suaranya sama persis dengan video panjangnya.</p>
+    </div>
+
+    <div id="kolomFormat">
+    <label class="judul-kolom">Format</label>
+    <div class="seg" id="segFormat">
+      <button data-v="9:16" class="aktif">📱 Portrait 9:16</button>
+      <button data-v="16:9">🖥️ Landscape 16:9</button>
+      <button data-v="keduanya">🖥️ Panjang + 📱 Reels</button>
+    </div>
+    </div>
+
+    <div id="kolomDurasi">
+      <label class="judul-kolom" for="durasi">Panjang video</label>
+      <select id="durasi">
+        <optgroup label="Singkat (Shorts, Reels, TikTok)">
+          <option value="30">± 30 detik</option>
+          <option value="45">± 45 detik</option>
+          <option value="60">± 1 menit</option>
+          <option value="90">± 1,5 menit</option>
+          <option value="120">± 2 menit</option>
+          <option value="180">± 3 menit</option>
+        </optgroup>
+        <optgroup label="Panjang (YouTube)">
+          <option value="300">± 5 menit</option>
+          <option value="480">± 8 menit</option>
+          <option value="600">± 10 menit</option>
+          <option value="900">± 15 menit</option>
+          <option value="1200">± 20 menit</option>
+        </optgroup>
+      </select>
+    </div>
+    <div id="kolomReels" hidden>
+      <div class="grid2">
+        <div>
+          <label class="judul-kolom" for="jumlah_reels">Jumlah reels portrait</label>
+          <select id="jumlah_reels">
+            <option value="1">1 reels</option>
+            <option value="2">2 reels</option>
+            <option value="3">3 reels</option>
+            <option value="4">4 reels</option>
+            <option value="5">5 reels</option>
+          </select>
+        </div>
+        <div>
+          <label class="judul-kolom" for="durasi_reels">Panjang tiap reels</label>
+          <select id="durasi_reels">
+            <option value="30">± 30 detik</option>
+            <option value="45">± 45 detik</option>
+            <option value="60">± 1 menit</option>
+            <option value="90">± 1,5 menit</option>
+          </select>
+        </div>
+      </div>
+      <label class="judul-kolom" for="cta_reels">Ajakan di akhir tiap reels</label>
+      <textarea id="cta_reels" rows="2"></textarea>
+      <p class="bantu">Tiap reels punya naskah teaser sendiri dengan fokus berbeda (satu bukti atau kejanggalan),
+        sengaja tidak membongkar jawabannya, lalu mengajak menonton video lengkapnya. Panjang video di atas = video
+        landscape-nya.</p>
+    </div>
+    <p class="bantu" id="infoDurasi"></p>
+
+    <div class="grid2">
+      <div>
+        <label class="judul-kolom" for="suara">Suara narator</label>
+        <select id="suara"></select>
+      </div>
+      <div>
+        <label class="judul-kolom">&nbsp;</label>
+        <button class="ghost lebar" id="btnContoh">🔊 Dengar contoh</button>
+      </div>
+    </div>
+    <div class="grid2">
+      <div>
+        <label class="judul-kolom" for="kecepatan">Kecepatan <span id="vKecepatan"></span></label>
+        <input type="range" id="kecepatan" min="-25" max="25" step="1">
+      </div>
+      <div>
+        <label class="judul-kolom" for="nada">Nada suara <span id="vNada"></span></label>
+        <input type="range" id="nada" min="-15" max="15" step="1">
+      </div>
+    </div>
+    <label class="cek"><input type="checkbox" id="suara_alami"> Suara lebih alami: jeda antarkalimat seperti orang bercerita + warna rekaman</label>
+
+    <details>
+      <summary>Pengaturan lanjutan</summary>
+      <label class="cek"><input type="checkbox" id="riset"> Riset fakta dari Wikipedia dulu (naskah lebih akurat)</label>
+      <label class="cek"><input type="checkbox" id="cek_gambar"> AI melihat & memilih footage paling pas (lebih lama, lebih nyambung)</label>
+      <label class="cek"><input type="checkbox" id="cek_naskah"> Berhenti dulu supaya naskah bisa saya cek/edit</label>
+      <label class="cek"><input type="checkbox" id="subtitle"> Subtitle kata per kata</label>
+      <label class="cek"><input type="checkbox" id="musik"> Musik latar (acak dari folder musik)</label>
+      <label class="cek"><input type="checkbox" id="maskot"> Maskot "Si Kepo" bereaksi di momen penting + logo kecil di pojok (gambar di folder maskot)</label>
+      <div class="grid2">
+        <div>
+          <label class="judul-kolom" for="volume_musik">Volume musik <span id="vVolume"></span></label>
+          <input type="range" id="volume_musik" min="0" max="40" step="1">
+        </div>
+        <div>
+          <label class="judul-kolom" for="gaya">Gaya visual</label>
+          <select id="gaya">
+            <option value="cerah">Dokumenter cerah: warna terang, transisi halus, angka/istilah tampil besar, musik tenang</option>
+            <option value="misterius">Misterius: gelap &amp; dingin, kabut, glitch transisi, judul hook, efek suara</option>
+            <option value="natural">Natural (tanpa efek)</option>
+          </select>
+        </div>
+      </div>
+      <label class="judul-kolom" for="cta">Ajakan di akhir video (CTA) — kosongkan kalau tidak perlu</label>
+      <textarea id="cta" rows="2"></textarea>
+      <label class="judul-kolom" for="visual">Tata visual</label>
+      <select id="visual">
+        <option value="video_stiker">🎞️ Video + stiker: mayoritas klip video (±3,5 dtk per potongan), foto yang tepat jadi stiker di atasnya, foto layar penuh maks. 3 dtk</option>
+        <option value="klasik">🖼️ Klasik: foto &amp; video layar penuh, 4–7 dtk per gambar</option>
+      </select>
+      <label class="judul-kolom" for="animasi">Gerak visual</label>
+      <select id="animasi">
+        <option value="hidup">Hidup: klip video asli diutamakan, foto dibuat bergerak 2.5D (parallax)</option>
+        <option value="zoom">Zoom/pan biasa (lebih cepat dirender)</option>
+      </select>
+      <label class="judul-kolom" for="isi_layar">Footage yang beda bentuk layar</label>
+      <select id="isi_layar">
+        <option value="crop">Penuhi layar (dipotong)</option>
+        <option value="blur">Tampil utuh, pinggir blur</option>
+      </select>
+    </details>
+
+    <details>
+      <summary>Disclaimer</summary>
+      <label class="judul-kolom" for="disclaimer">Tampilkan disclaimer</label>
+      <select id="disclaimer">
+        <option value="awal">Teks di awal video (5 detik, bagian atas)</option>
+        <option value="akhir">Kartu di akhir video, dibacakan narator</option>
+        <option value="keduanya">Keduanya</option>
+        <option value="tidak">Tanpa disclaimer</option>
+      </select>
+      <label class="judul-kolom" for="teks_disclaimer">Teks disclaimer (juga masuk ke deskripsi)</label>
+      <textarea id="teks_disclaimer" rows="3"></textarea>
+      <button class="ghost kecil" id="btnDisclaimerBawaan" type="button">Kembalikan teks bawaan</button>
+    </details>
+
+    <button class="utama" id="btnBuat">🎬 Buat Video</button>
+    <p class="bantu" id="infoBuat"></p>
+  </section>
+
+  <section class="kartu" id="kolomProyek">
+    <h2>Proyek <span class="kecil" id="jumlahProyek"></span></h2>
+    <div id="daftarProyek"><p class="bantu">Belum ada proyek.</p></div>
+  </section>
+</main>
+
+<div class="modal" id="modalDetail" hidden>
+  <div class="isi-modal lebar-penuh">
+    <div class="kepala-modal">
+      <h2 id="dJudul"></h2>
+      <button class="ghost" data-tutup>✕</button>
+    </div>
+    <div id="dIsi"></div>
+  </div>
+</div>
+
+<div class="modal" id="modalIde" hidden>
+  <div class="isi-modal lebar-penuh">
+    <div class="kepala-modal">
+      <h2>💡 Ide topik konspirasi</h2>
+      <button class="ghost" data-tutup>✕</button>
+    </div>
+    <p class="bantu">Klik ide untuk memakainya, atau centang beberapa lalu antrikan sekaligus (memakai pengaturan
+      format, durasi, dan suara di form).</p>
+    <div class="chips-kategori" id="ideKategori"></div>
+    <div id="ideDaftar" class="ide-daftar"></div>
+    <div class="baris">
+      <button id="btnIdeAI">🤖 Minta AI 8 ide baru di kategori ini</button>
+      <button class="utama" style="width:auto;margin:0" id="btnIdeAntri" disabled>🎬 Antrikan yang dicentang</button>
+      <span class="bantu" id="ideInfo"></span>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="modalSetelan" hidden>
+  <div class="isi-modal">
+    <div class="kepala-modal">
+      <h2>⚙️ Setelan</h2>
+      <button class="ghost" data-tutup>✕</button>
+    </div>
+    <p class="bantu">Tanpa login apa pun, footage dicari di <b>Wikimedia Commons, NASA, Archive.org</b> (film arsip
+      public domain), <b>Openverse</b> (foto bebas dari Flickr &amp; museum), <b>The Met</b> dan <b>Cleveland Museum</b>
+      (lukisan, ukiran, peta kuno). Kebanyakan berupa foto dan arsip lama.</p>
+    <p class="bantu">Opsional: isi key <b>gratis</b> Pexels &amp; Pixabay kalau mau tambahan stock video HD modern.</p>
+    <label class="judul-kolom" for="pexels_key">Pexels API key — <a href="https://www.pexels.com/api/" target="_blank" rel="noopener">daftar gratis</a></label>
+    <input id="pexels_key" placeholder="tempel key Pexels di sini" autocomplete="off">
+    <label class="judul-kolom" for="pixabay_key">Pixabay API key — <a href="https://pixabay.com/api/docs/" target="_blank" rel="noopener">daftar gratis (key ada di halaman itu setelah login)</a></label>
+    <input id="pixabay_key" placeholder="tempel key Pixabay di sini" autocomplete="off">
+    <label class="judul-kolom" for="sumber_web">Gambar dari seluruh web (Bing Images)</label>
+    <select id="sumber_web">
+      <option value="tidak">Tidak — hanya sumber berlisensi bebas di atas</option>
+      <option value="berlisensi">Berlisensi — web dengan filter "bebas dipakai" (hasilnya sering kurang nyambung)</option>
+      <option value="semua">Semua — paling nyambung, tapi kebanyakan gambar berhak cipta</option>
+    </select>
+    <p class="bantu">"Semua" mencari gambar di seluruh web lewat Edge di laptop ini (±8 detik per adegan). Gambar web
+      biasanya milik orang lain: pemiliknya bisa mengajukan klaim/takedown di YouTube atau TikTok. Kalau sama tepatnya,
+      gambar berlisensi bebas tetap didahulukan, dan alamat halaman sumbernya dicatat di deskripsi.txt.</p>
+    <label class="judul-kolom" for="model">Model AI (Ollama)</label>
+    <select id="model"></select>
+    <label class="cek"><input type="checkbox" id="pantau_input"> Otomatis proses file .txt yang ditaruh di folder input</label>
+    <div class="baris">
+      <button class="ghost" data-buka="input">📥 Folder input</button>
+      <button class="ghost" data-buka="musik">🎵 Folder musik</button>
+      <button class="ghost" data-buka="output">📤 Folder hasil</button>
+    </div>
+    <p class="bantu">Musik: taruh file .mp3 bebas royalti (misalnya dari YouTube Audio Library) di folder musik.</p>
+    <button class="utama" id="btnSimpanSetelan">Simpan</button>
+  </div>
+</div>
+
+<audio id="pemutar" hidden></audio>
+<script src="/aset/app.js"></script>
+</body>
+</html>

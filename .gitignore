@@ -1,0 +1,16 @@
+# Lingkungan Python
+.venv/
+__pycache__/
+*.pyc
+
+# Data pribadi & hasil (TIDAK boleh ke repo publik): proyek, cache, setelan + API key, profil suara pengguna
+# (rekaman suaranya bisa dipakai orang untuk mengkloning suara), video sumber upload
+data/
+
+# Hasil video, antrian .txt, dan musik (bisa berhak cipta) — folder dibuat otomatis saat aplikasi jalan
+output/
+input/
+musik/
+
+*.log
+*.tmp

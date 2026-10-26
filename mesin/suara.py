@@ -53,6 +53,18 @@ def _model_whisper():
     return _whisper
 
 
+def audio_16k(path):
+    """Audio sebagai array float32 mono 16 kHz (didekode ffmpeg) untuk Whisper. Path file langsung didekode
+    faster-whisper lewat PyAV, dan PyAV 19 (terpasang di mini PC) menolak argumen yang dikirim faster-whisper 1.2:
+    "open() got an unexpected keyword argument 'metadata_errors'"."""
+    import subprocess
+    import numpy as np
+    from .alat import FFMPEG, NO_WINDOW
+    pcm = subprocess.run([FFMPEG, "-v", "error", "-i", str(path), "-vn", "-f", "s16le", "-ac", "1", "-ar", "16000", "-"],
+                         capture_output=True, creationflags=NO_WINDOW, check=True).stdout
+    return np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768
+
+
 def _token(t):
     return re.findall(r"\w+", t.lower())
 
@@ -125,7 +137,7 @@ def selaraskan(mp3, kata, log=print, batal=None):
         dengar = json.loads(cache.read_text(encoding="utf-8"))
     else:
         try:
-            segmen, _ = _model_whisper().transcribe(str(mp3), language="id", word_timestamps=True, beam_size=5,
+            segmen, _ = _model_whisper().transcribe(audio_16k(mp3), language="id", word_timestamps=True, beam_size=5,
                                                      vad_filter=False)
             dengar = []
             for s in segmen:  # generator: tiap segmen bisa disela tombol Batal / Tulis ulang

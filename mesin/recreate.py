@@ -36,9 +36,9 @@ def transkrip_file(path, log=print, batal=None):
     cache = FOLDER / f"transkrip-{_kunci_file(path)}.json"
     if cache.exists():
         return json.loads(cache.read_text(encoding="utf-8"))
-    from .suara import _model_whisper
+    from .suara import _model_whisper, audio_16k
     log("Mentranskrip video sumber dengan Whisper (sekali saja, ±1x durasi video)…")
-    segmen, info = _model_whisper().transcribe(str(path), language="id", beam_size=5, vad_filter=True)
+    segmen, info = _model_whisper().transcribe(audio_16k(path), language="id", beam_size=5, vad_filter=True)
     hasil = []
     for s in segmen:
         if batal:

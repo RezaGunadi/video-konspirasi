@@ -1198,7 +1198,9 @@ def urutkan_untuk_adegan(cfg, narasi, q, format_video, terpakai, cek_gambar, bat
         sudah = set()
         # Adegan yang membahas bukti/benda tertentu boleh dicari sampai 4 putaran; adegan abstrak (pertanyaan,
         # penghubung) cukup 2 putaran — tiap putaran ±1 menit dan yang setema pun sudah layak.
-        for putaran in range(3 if video else 4):
+        # tiap putaran = satu panggilan AI vision (±1 menit di laptop ber-GPU, 2-3 menit di mini PC tanpa GPU);
+        # setelan "putaran_gambar" membatasinya per mesin
+        for putaran in range(int(cfg.get("putaran_gambar") or (3 if video else 4))):
             # adegan abstrak berhenti setelah 2 putaran, KECUALI belum ada satu pun gambar yang layak (≥5)
             # (yang dihitung hanya gambar yang belum tampil di adegan lain: dulu gambar layak yang sudah terpakai
             # menghentikan pencarian, lalu adegan "29 hektar" jatuh ke foto kastil yang belum dinilai)

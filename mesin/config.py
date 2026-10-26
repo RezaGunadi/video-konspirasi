@@ -15,6 +15,8 @@ BAWAAN = {
     "pexels_key": "",
     "pixabay_key": "",
     "pantau_input": True,  # file .txt di folder input/ otomatis diproses
+    # Maksimal putaran AI menilai gambar per adegan (0 = otomatis: 3 di mode video, 4 di klasik). Mini PC tanpa GPU: 2.
+    "putaran_gambar": 0,
     # Gambar dari seluruh web (Bing Images via Edge headless): "tidak" / "berlisensi" (filter bebas dipakai) /
     # "semua" (termasuk gambar berhak cipta — risiko klaim di YouTube/TikTok ditanggung pemilik channel).
     "sumber_web": "tidak",

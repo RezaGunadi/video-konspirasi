@@ -210,8 +210,10 @@ def inti_cerita(cfg, bahan, riset, batal=None, log=print, gaya="meyakinkan"):
         "- kesimpulan: kalimat penutup yang MENJAWAB pertanyaan besar menurut teori, diawali \"Kalau semua "
         "digabung\".\n"
         "Fakta, angka, dan nama hanya dari BAHAN FAKTA. Jangan menuduh orang nyata berbuat kejahatan.")
-    pesan = [{"role": "user", "content": (
-        f"BAHAN FAKTA (sumber terpercaya):\n{_fakta(riset)}\n\nTOPIK / CATATAN DARI PEMBUAT VIDEO:\n{bahan.strip()}\n\n"
+    # Awal prompt (system + BAHAN FAKTA + TOPIK) dibuat SAMA PERSIS dengan prompt penulisan naskah berikutnya, supaya
+    # Ollama memakai ulang cache-nya. Di mini PC tanpa GPU, membaca ±8.000 token bahan riset makan ±20 menit.
+    pesan = [{"role": "system", "content": sistem(gaya)}, {"role": "user", "content": (
+        f"{_awal_bahan(riset, bahan)}"
         f"Sebelum naskah video {'sains/fakta' if fakta else 'konspirasi/misteri'} ditulis, susun INTI CERITANYA dalam "
         f"bahasa Indonesia sehari-hari, satu kalimat per kolom:\n{kolom}")}]
     try:
@@ -297,6 +299,12 @@ def _fakta(riset):
     return "\n\n".join(f"[{s['judul']} — Wikipedia {s['lang']}]\n{s['teks']}" for s in riset) or "(tidak ada)"
 
 
+def _awal_bahan(riset, bahan):
+    """Awal pesan pengguna yang sama untuk inti cerita, naskah pendek, dan kerangka/bagian naskah panjang (cache)."""
+    return (f"BAHAN FAKTA (sumber terpercaya, pakai untuk detail):\n{_fakta(riset)}\n\n"
+            f"TOPIK / CATATAN DARI PEMBUAT VIDEO:\n{bahan.strip()}\n\n")
+
+
 def _perintah_cta(cta):
     cta = (cta or "").strip()
     return (f" Pertanyaan ke penonton tetap ditulis, lalu SESUDAHNYA kalimat paling akhir naskah adalah ajakan ini "
@@ -317,8 +325,7 @@ def tulis(cfg, bahan, riset, durasi, batal=None, saat_token=None, log=print, gay
     pesan = [
         {"role": "system", "content": sistem(gaya)},
         {"role": "user", "content": (
-            f"BAHAN FAKTA (sumber terpercaya, pakai untuk detail):\n{_fakta(riset)}\n\n"
-            f"TOPIK / CATATAN DARI PEMBUAT VIDEO:\n{bahan.strip()}\n\n{_perintah_inti(inti)}"
+            f"{_awal_bahan(riset, bahan)}{_perintah_inti(inti)}"
             f"Tulis naskah voice-over sekitar {kata} kata (±{lebih}), JANGAN lebih dari {kata + lebih} kata karena "
             f"videonya hanya {durasi} detik.{ringkas} "
             f"{g['pendek'] if durasi <= 90 else g['panjang']}{_perintah_cta(cta)}")},
@@ -425,8 +432,7 @@ def _tulis_panjang(cfg, bahan, riset, durasi, batal, saat_token, log, gaya="twis
     n = max(5, min(16, round(durasi / 45))) if gaya in ("bangun_teori", "edukasi") else \
         max(4, min(14, round(durasi / 80)))
     per_bagian = int(total / n * 1.15)  # model cenderung menulis ±15% lebih pendek dari yang diminta
-    dasar = (f"BAHAN FAKTA (sumber terpercaya, pakai untuk detail):\n{_fakta(riset)}\n\n"
-             f"TOPIK / CATATAN DARI PEMBUAT VIDEO:\n{bahan.strip()}\n\n{_perintah_inti(inti)}")
+    dasar = f"{_awal_bahan(riset, bahan)}{_perintah_inti(inti)}"
     schema = json.loads(json.dumps(SCHEMA_KERANGKA))
     schema["properties"]["bagian"].update(minItems=n, maxItems=n)
     log(f"Video panjang ({durasi // 60} menit): AI menyusun kerangka {n} bagian…")

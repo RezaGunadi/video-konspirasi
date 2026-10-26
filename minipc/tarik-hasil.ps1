@@ -1,0 +1,27 @@
+# Tarik video yang sudah jadi dari mini PC ke laptop: output\<nama mini PC>\<folder video>.
+# Hanya folder yang sudah rampung (ada deskripsi.txt, ditulis paling akhir) dan belum ada di laptop.
+# Daftar mini PC di data\pekerja.json (tidak ikut Git): [{"nama": "minipc-A", "host": "user@192.168.x.x"}, ...]
+$ErrorActionPreference = 'Stop'
+$akar = Split-Path $PSScriptRoot -Parent
+$kunci = Join-Path $HOME '.ssh\minipc_ed25519'
+$pekerja = Get-Content (Join-Path $akar 'data\pekerja.json') -Raw | ConvertFrom-Json
+foreach ($p in $pekerja) {
+    $tujuan = Join-Path $akar "output\$($p.nama)"
+    New-Item -ItemType Directory -Force $tujuan | Out-Null
+    try {
+        $siap = ssh -i $kunci -o BatchMode=yes -o ConnectTimeout=8 $p.host `
+            'cd ~/video-konspirasi/output 2>/dev/null && ls -1d */ 2>/dev/null | while read d; do [ -f "$d/deskripsi.txt" ] && echo "${d%/}"; done'
+    } catch {
+        Write-Host "$($p.nama) ($($p.host)) tidak terjangkau: $_" -ForegroundColor Yellow
+        continue
+    }
+    $baru = 0
+    foreach ($f in $siap) {
+        if ($f -and -not (Test-Path (Join-Path $tujuan $f))) {
+            Write-Host "Mengunduh $($p.nama)\$f ..."
+            scp -q -r -i $kunci -o BatchMode=yes "$($p.host):video-konspirasi/output/$f" $tujuan
+            $baru++
+        }
+    }
+    Write-Host "$($p.nama): $baru video baru, total $(@($siap).Count) di mini PC -> $tujuan" -ForegroundColor Green
+}

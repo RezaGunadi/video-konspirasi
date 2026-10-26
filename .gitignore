@@ -14,3 +14,6 @@ musik/
 
 *.log
 *.tmp
+
+# Catatan akses mini PC & kredensial (pribadi)
+KREDENSIAL*.md

@@ -935,7 +935,7 @@ def _kueri_latar(p, i):
 
 # Naikkan setiap kali logika rencana shot berubah: adegan yang direncanakan versi lama disusun ulang saat langkah
 # footage jalan lagi (misalnya mini PC direstart di tengah footage), kandidatnya tetap.
-RENCANA_VERSI = 5
+RENCANA_VERSI = 6
 
 
 def _rencana_lemah(a):

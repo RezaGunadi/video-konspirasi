@@ -72,9 +72,12 @@ ARSIP = re.compile(r"\b(1[89]\d\d|19[0-7]\d)\b|newsreel|propaganda|technicolor|\
                    # film koleksi arsip nasional AS ("Deep Sea Fishing in Florida (31-MP-611)", film rumahan Hoover)
                    r"\b\d{2,3}-[a-z]{1,4}-\d+\b|home movie|kodacolor|kodachrome|national archives|"
                    r"presidential library", re.I)
-# Kata umum di kueri latar yang tidak menentukan tempat ("deep sea underwater" → "deep sea", "underwater").
+# Kata umum di kueri latar yang tidak menentukan tempat ("deep sea underwater" → "deep sea", "underwater"). Termasuk
+# kata bentuk visual: "earth globe animation" pernah mendapat "Digital animation of screens" (layar TV statis).
 _UMUM_LATAR = {"aerial", "view", "views", "drone", "close", "closeup", "up", "timelapse", "time", "lapse", "footage",
-               "video", "shot", "slow", "motion", "background", "scene", "landscape", "beautiful", "over", "into"}
+               "video", "shot", "slow", "motion", "background", "scene", "landscape", "beautiful", "over", "into",
+               "animation", "animated", "digital", "abstract", "simulation", "render", "cgi", "graphic", "graphics",
+               "3d", "4k", "hd", "loop", "cinematic", "clip", "stock", "moving", "flying", "camera"}
 
 
 def _kata(teks):
@@ -88,12 +91,36 @@ def arsip_tak_relevan(k, narasi):
     return not re.search(r"\b(1[0-9]\d\d|19[0-8]\d)\b", narasi or "")
 
 
+def _akar(w):
+    """Bentuk tunggal sederhana kata Inggris: galaxies → galaxy, volcanoes → volcano, dunes → dune."""
+    if len(w) > 4 and w.endswith("ies"):
+        return w[:-3] + "y"
+    if len(w) > 4 and w.endswith(("oes", "xes", "ches", "shes", "sses")):
+        return w[:-2]
+    if len(w) > 3 and w.endswith("s") and not w.endswith("ss"):
+        return w[:-1]
+    return w
+
+
+_AKHIRAN = ("s", "es", "n", "an", "ern", "ic", "al", "er", "est", "y", "ing", "ed")
+
+
+def _kata_sama(a, b):
+    """Kata yang sama atau turunannya (sahara/saharan, deep/deepest, ocean/oceanic) — bukan sekadar awalan
+    ("sand" ≠ "sandbar")."""
+    pendek, panjang = sorted((_akar(a), _akar(b)), key=len)
+    return pendek == panjang or (len(pendek) >= 3 and panjang.startswith(pendek)
+                                 and panjang[len(pendek):] in _AKHIRAN)
+
+
 def cocok_judul(k, kueri):
-    """Judul/keterangan klip menyebut tempat yang dicari ("Underwater view of a coral reef" untuk "deep sea
-    underwater"). Klip latar yang TIDAK dinilai AI hanya dipakai kalau cocok begini."""
+    """Judul klip menyebut tempat yang dicari ("Underwater view of a coral reef" untuk "deep sea underwater"). Klip
+    latar yang TIDAK dinilai AI hanya dipakai kalau cocok begini. Hanya judulnya, kata utuh: dulu keterangan panjang
+    ikut dicocokkan per potongan kata, jadi "desert sand dunes" mendapat akrobat di pantai ("…on the sand near the
+    seashore"), pulau pasir ("Sandbar island"), dan festival "Halloween Weekend 2016"."""
     kata = [w for w in _kata(kueri) if w not in _UMUM_LATAR and len(w) >= 3]
-    teks = " ".join(_kata(f"{k.get('judul') or ''} {k.get('teks') or ''}"))
-    return any(w[:5] in teks for w in kata)
+    judul = _kata(k.get("judul") or k.get("teks") or "")
+    return any(_kata_sama(w, x) for w in kata for x in judul)
 
 
 def klip_latar(cfg, kueri, format_video, kecuali=(), narasi="", log=print, maks=4):

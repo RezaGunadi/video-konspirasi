@@ -41,8 +41,30 @@ RestartSec=10
 [Install]
 WantedBy=default.target
 EOF
+# Kode baru tidak menunggu proyek selesai: timer tiap menit menarik update dan merestart aplikasi (minipc/cek-update.sh).
+cat > "$HOME/.config/systemd/user/video-ai-update.service" <<EOF
+[Unit]
+Description=Tarik kode baru Video AI, restart kalau logikanya berubah
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh $APP/minipc/cek-update.sh
+EOF
+cat > "$HOME/.config/systemd/user/video-ai-update.timer" <<EOF
+[Unit]
+Description=Cek kode baru Video AI tiap menit
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target
+EOF
 systemctl --user daemon-reload
 systemctl --user enable --now video-ai.service
+systemctl --user enable --now video-ai-update.timer
 sleep 3
 systemctl --user --no-pager --lines=5 status video-ai.service || true
 echo "UI: http://$(hostname -I | awk '{print $1}'):3220"

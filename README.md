@@ -254,6 +254,11 @@ Setelan Ollama di mini PC Linux (`/etc/systemd/system/ollama.service.d/video-ai.
 Tanpa yang terakhir, llama-server menyimpan cache prompt sampai 8 GB di RAM; setelah ±14 jam RAM penuh, swap
 terpakai 6 GB, dan AI melambat ke ±2 token/detik sampai naskah gagal karena batas waktu 1 jam.
 
+Mini PC Linux yang dipasang dengan `minipc/pasang-aplikasi.sh` memperbarui diri sendiri: timer
+`video-ai-update` mengecek GitHub tiap menit (`minipc/cek-update.sh`). Kalau ada file `.py` yang berubah,
+aplikasi langsung direstart, dan proyek yang sedang jalan mengulang langkahnya dengan kode baru (tidak menunggu
+proyek selesai). Perubahan lain hanya ditarik.
+
 ## Teknis
 
 - Python venv: `.venv` · server: `app.py` (port 3220, hanya bisa dibuka dari laptop ini)

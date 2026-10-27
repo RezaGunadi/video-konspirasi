@@ -173,15 +173,16 @@ def _ringkas(k):
 
 # ---------------------------------------------------------------- perubahan dari GUI
 
-def _terapkan(p, fungsi, antri, tadinya_jalan):
-    """Terapkan perubahan dari GUI (dipanggil dengan _lock)."""
+def _terapkan(p, fungsi, antri, tadinya_jalan, duluan=False):
+    """Terapkan perubahan dari GUI (dipanggil dengan _lock). duluan=True: proyek ini tadi sedang dikerjakan, jadi
+    tetap dikerjakan duluan (dulu naskah yang diedit di tengah proses pindah ke belakang antrean)."""
     fungsi(p)
     p["galat"] = ""
     if antri or tadinya_jalan:
         p["perubahan"] = False
         if p["status"] != "cek_naskah" or "naskah" in p["selesai"]:
             p["status"] = "antri"
-            p["antri_sejak"] = _sekarang()
+            p["antri_sejak"] = "0" if duluan else _sekarang()
             p["pesan"] = "Menunggu giliran"
     else:
         p["perubahan"] = True
@@ -202,7 +203,8 @@ def _hentikan_lalu(pid, fungsi, antri=True):
         if not p:
             raise KeyError(pid)
         tadinya_jalan = p["status"] in ("jalan", "antri")
-        if p["status"] == "jalan" and pid in _batal:
+        sedang_jalan = p["status"] == "jalan"
+        if sedang_jalan and pid in _batal:
             _batal[pid].set()
     for _ in range(50):
         with _lock:
@@ -214,7 +216,7 @@ def _hentikan_lalu(pid, fungsi, antri=True):
             _tertunda.setdefault(pid, []).append((fungsi, antri))
             p["pesan"] = "Menghentikan proses… perubahan diterapkan begitu langkah ini berhenti"
             return p
-        _terapkan(p, fungsi, antri, tadinya_jalan)
+        _terapkan(p, fungsi, antri, tadinya_jalan, duluan=sedang_jalan)
     _simpan(p, paksa=True)
     _bangun.set()
     return p
@@ -2037,7 +2039,7 @@ def kerjakan(p):
         with _lock:
             _batal.pop(p["id"], None)
             for fungsi, antri in _tertunda.pop(p["id"], []):
-                _terapkan(p, fungsi, antri, True)
+                _terapkan(p, fungsi, antri, True, duluan=True)
         _simpan(p, paksa=True)
 
 

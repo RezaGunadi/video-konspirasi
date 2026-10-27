@@ -356,8 +356,8 @@ _PEMBANDING = re.compile(r"\b(daripada|dibandingkan?|setara|kali lipat|seukuran|
                          r"secepat|sepanjang|lebih (cepat|lambat|besar|kecil|tinggi|rendah|panjang|berat|tua|dalam|"
                          r"luas|banyak))\b", re.I)
 # perbandingan DENGAN sesuatu ("lebih cepat daripada kuku", "setara 1.600 gajah") — "tumbuh lebih tinggi" saja bukan
-_BANDING_OBJEK = re.compile(r"\b(daripada|dibandingkan?|setara|kali lipat|seukuran|setinggi|sebesar|seberat|seluas|"
-                            r"secepat|sepanjang)\b", re.I)
+_BANDING_OBJEK = re.compile(r"\b(daripada|dibandingkan?|setara|kali lipat|(seukuran|setinggi|sebesar|seberat|seluas|"
+                            r"secepat|sepanjang)(?!\s+(ini|itu|apa)\b))\b", re.I)  # "energi sebesar ini" bukan pembanding
 # kata yang wajar muncul di perbaikan walau tidak ada di naskah/sumber (arah perbandingan, keterangan waktu)
 _KATA_PERBAIKAN = {"lambat", "cepat", "kecil", "besar", "rendah", "tinggi", "pendek", "panjang", "ringan", "berat",
                    "muda", "sedikit", "banyak", "awalnya", "dahulu", "mula-mula", "sekitar", "hampir", "kurang",
@@ -385,21 +385,32 @@ def _angka_satuan(teks):
             re.findall(r"(\d+(?:[.,]\d+)*)\s*(%|[A-Za-z]+)?", teks) if _SATUAN.get((s or "").lower())}
 
 
+# kata umum yang tidak menunjukkan dua kalimat membahas hal yang sama
+_KATA_LEMAH = {"sekitar", "dengan", "bahwa", "mereka", "sangat", "dalam", "untuk", "adalah", "karena", "tetapi",
+               "namun", "menjadi", "hingga", "setelah", "sebelum", "sebagai", "seperti", "tersebut", "lebih", "tahun",
+               "bahkan", "ternyata", "sebenarnya", "about", "which", "their", "there", "after", "before", "years",
+               "million", "would", "these", "those", "being", "other", "where", "while"}
+
+
 def _kutipan_sumber(kalimat, sumber):
     """Dua kalimat sumber yang memuat angka yang sama (satuan yang sama didahulukan) dengan kalimat naskah. Tanpa
     angka yang sama (angka ditulis dengan huruf: "sembilan juta kilometer persegi"), kalimat sumber dengan kata yang
     paling banyak sama — dulu kutipannya kosong dan luas Sahara yang benar dibuang karena "tidak ada di sumber"."""
     angka, pasangan = _angka(kalimat), _angka_satuan(kalimat)
-    kata = {w for w in re.findall(r"\w+", kalimat.lower()) if len(w) > 4}
-    skor, cadangan = [], []
+    kata = {w for w in re.findall(r"\w+", kalimat.lower()) if len(w) > 4} - _KATA_LEMAH
+    # Angka yang ada di banyak kalimat sumber (tahun peristiwanya: "1883" di 18 kalimat) bukan penanda: dulu kalimat
+    # "gelombang tekanan mengelilingi dunia lebih dari tiga kali" mendapat kutipan tentang gempa tahun 1883, padahal
+    # sumbernya memuat kalimat yang hampir sama persis.
+    umum = {a for a in angka if sum(1 for s in sumber if a in _angka(s)) >= 5}
+    skor = []
     for s in sumber:
+        angka_s = _angka(s)
+        khas = (angka - umum) & angka_s
         mirip = len(kata & set(re.findall(r"\w+", s.lower())))
-        sama = angka & _angka(s)
-        if sama:
-            skor.append((len(sama) * 3 + len(pasangan & _angka_satuan(s)) * 3 + mirip, s))
-        elif mirip >= 2:
-            cadangan.append((mirip, s))
-    return [s for _, s in sorted(skor or cadangan, key=lambda x: -x[0])[:2]]
+        if khas or mirip >= 2:
+            skor.append((3 * len(khas) + 3 * len(pasangan & _angka_satuan(s)) + 0.5 * len(angka & umum & angka_s)
+                         + mirip, s))
+    return [s for _, s in sorted(skor, key=lambda x: -x[0])[:2]]
 
 
 _DULU_SUMBER = re.compile(r"\b(began|begun|initially|originally|used to|at that time|formerly|at first|"
@@ -455,7 +466,12 @@ def periksa_fakta(cfg, teks, riset, batal=None, log=print):
         for n, (pi, ki) in enumerate(kelompok):
             k = paragraf[pi][ki]
             kutip = _kutipan_sumber(k, sumber)
-            daftar.append(f"{n + 1}) {k}\n   Kutipan sumber: "
+            # kalimat sebelumnya ikut ditulis: "Angka ini … lebih cepat daripada kuku" merujuk "10 mm per tahun" di
+            # kalimat sebelumnya — tanpa itu pemeriksa kadang tidak bisa menghitungnya
+            sebelum = paragraf[pi][ki - 1] if ki > 0 else (paragraf[pi - 1][-1] if pi > 0 and paragraf[pi - 1] else "")
+            daftar.append(f"{n + 1}) {k}\n"
+                          + (f"   Kalimat sebelumnya (konteks, tidak diperiksa): {sebelum}\n" if sebelum else "")
+                          + "   Kutipan sumber: "
                           + (" | ".join(x[:300] for x in kutip) if kutip else "(tidak ada angka yang sama di sumber)")
                           + _catatan_waktu(k, kutip))
         schema = {"type": "object", "properties": {"kalimat": {
@@ -514,7 +530,8 @@ def periksa_fakta(cfg, teks, riset, batal=None, log=print):
                     continue
                 baru = ""
             usulan.append({"letak": (pi, ki), "lama": lama, "baru": baru, "alasan": str(x.get("alasan") or ""),
-                           "kutipan": _kutipan_sumber(lama, sumber)})
+                           "kutipan": _kutipan_sumber(lama, sumber),
+                           "sebelum": paragraf[pi][ki - 1] if ki > 0 else ""})
     for u, ok in zip(usulan, _uji_usulan(cfg, usulan, batal, log)):
         if not ok:
             log(f"Usulan perbaikan ditolak pemeriksa kedua: «{u['lama']}» → «{u['baru'] or '(dibuang)'}»")
@@ -562,7 +579,8 @@ def _uji_usulan(cfg, usulan, batal, log):
     if not usulan:
         return []
     daftar = "\n".join(
-        f"{n + 1}) ASLI: {u['lama']}\n   USULAN: {u['baru'] or '(kalimat dibuang)'}\n   Kutipan sumber: "
+        f"{n + 1}) " + (f"Kalimat sebelumnya (konteks): {u['sebelum']}\n   " if u.get("sebelum") else "")
+        + f"ASLI: {u['lama']}\n   USULAN: {u['baru'] or '(kalimat dibuang)'}\n   Kutipan sumber: "
         + (" | ".join(x[:300] for x in u["kutipan"]) or "(tidak ada)") + _catatan_waktu(u["lama"], u["kutipan"])
         for n, u in enumerate(usulan))
     props = {f"usulan_{n + 1}": {"type": "boolean"} for n in range(len(usulan))}
@@ -570,8 +588,10 @@ def _uji_usulan(cfg, usulan, batal, log):
         "Untuk tiap nomor, bandingkan kalimat ASLI dan USULAN dengan kutipan sumbernya dan pengetahuan ilmiah yang "
         "sudah pasti.\n\n" + daftar + "\n\n"
         "usulan_N = true hanya kalau USULAN lebih sesuai dengan kutipan sumber daripada ASLI (angka, satuan, keterangan "
-        "waktu dulu/sekarang, arah perbandingan). false kalau ASLI sudah sesuai sumber, kalau USULAN mengambil angka "
-        "dari kalimat sumber yang membahas hal lain, atau kalau USULAN merusak kalimatnya.")}]
+        "waktu dulu/sekarang, arah perbandingan). false kalau ASLI sudah sesuai sumber, kalau kutipannya membahas hal "
+        "lain sehingga tidak membuktikan ASLI salah (kecuali ASLI jelas keliru menurut pengetahuan ilmiah yang sudah "
+        "pasti), kalau USULAN mengambil angka dari kalimat sumber yang membahas hal lain, atau kalau USULAN merusak "
+        "kalimatnya.")}]
     try:
         j = ollama.chat_json(cfg, pesan, {"type": "object", "properties": props, "required": list(props)},
                              batal=batal, maks_token=12 * len(usulan) + 30, suhu=0.1)

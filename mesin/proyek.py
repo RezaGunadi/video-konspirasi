@@ -1601,6 +1601,11 @@ def _buat_reels(p, cfg, batal):
     log(p, f"AI merencanakan {n} reels teaser dengan fokus berbeda…")
     fokus = naskah.rencana_reels(cfg, p["naskah"], n, batal, log=lambda t: log(p, t))
     lama = _anak_reels(p)
+    with _lock:
+        # Restart (mati lampu) sesudah reels dibuat tapi sebelum video panjang tersimpan: reels itu tetap ada dengan
+        # induk = video ini, jadi dipakai ulang, bukan dibuat lagi (Sahara pernah punya 6 reels).
+        lama += sorted((i for i, a in _proyek.items() if a.get("induk") == p["id"] and i not in lama
+                        and a["opsi"].get("mode") == "teaser"), key=lambda i: _proyek[i]["dibuat"])
     for pid in lama[n:]:
         hapus(pid)
     ids = []
@@ -1612,6 +1617,7 @@ def _buat_reels(p, cfg, batal):
         log(p, f"  📱 Reels {i + 1}: {f}")
     p["reels"] = ids
     p.pop("kembar_id", None)
+    _simpan(p, paksa=True)
     _bangun.set()
 
 

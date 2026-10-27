@@ -521,6 +521,9 @@ def _tulis_panjang(cfg, bahan, riset, durasi, batal, saat_token, log, gaya="twis
         sambung = f"\nBagian sebelumnya berakhir dengan: «{' '.join(hasil[-1].split()[-60:])}»\n" \
                   "Lanjutkan dengan mulus tanpa mengulang isi sebelumnya." if hasil else ""
         sudah = sum(len(h.split()) for h in hasil)
+        # Dengan aturan "padat" model menulis ±125 kata walau diminta 190 (Komodo: 497 dari 660 kata, video 5 menit
+        # jadi 3:18): kekurangan bagian sebelumnya dibagi ke bagian yang tersisa.
+        minta = min(int(per_bagian * 1.6), max(per_bagian, int((total - sudah) / (len(bagian) - i) * 1.15)))
 
         def token(teks, sudah=sudah):
             if saat_token:
@@ -529,9 +532,9 @@ def _tulis_panjang(cfg, bahan, riset, durasi, batal, saat_token, log, gaya="twis
         teks = ollama.chat(cfg, [{"role": "system", "content": SIS}, {"role": "user", "content": (
             dasar + f"KERANGKA VIDEO:\n{daftar}\n\n"
             f"Sekarang tulis HANYA bagian {i + 1}: \"{b['judul']}\" — {b['isi']}\n"
-            f"Panjang sekitar {per_bagian} kata. {posisi}{sambung}\n"
+            f"Panjang sekitar {minta} kata. {posisi}{sambung}\n"
             "Jangan menulis judul bagian. Aturan hook dan pertanyaan penutup hanya berlaku untuk bagian pertama "
-            "dan terakhir.")}], suhu=0.8, batal=batal, saat_token=token, maks_token=int(per_bagian * 3 + 150))
+            "dan terakhir.")}], suhu=0.8, batal=batal, saat_token=token, maks_token=int(minta * 3 + 150))
         teks = bersihkan(teks)
         if teks and hasil:
             hasil[-1], teks = _buang_ulangan(hasil[-1], teks)

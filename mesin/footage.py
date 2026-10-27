@@ -1214,11 +1214,33 @@ def _pilih_untuk_dilihat(kandidat, q, sudah, terpakai, jumlah=4, video=False):
 
 SKOR_BAGUS = 7  # skor AI minimal supaya gambar dianggap tepat (rubrik: 4-6 = hanya setema)
 LATAR_BAGUS = 5  # tata visual "video + stiker": klip minimal setema sudah layak jadi latar (subjeknya di stiker)
+LATAR_JELAS = 7  # klip yang judul/isinya tidak menyebut subjeknya: tempatnya harus jelas berhubungan dengan narasi
+# kata judul video yang tidak menunjuk subjek ("Kenapa Komodo Jadi Raksasa…" → komodo, raksasa, pulau)
+_BUKAN_TOPIK = {"kenapa", "mengapa", "bagaimana", "apakah", "jadi", "bisa", "yang", "dari", "dalam", "dengan",
+                "untuk", "adalah", "lebih", "paling", "ternyata", "sebenarnya", "rahasia", "misteri", "fakta", "dunia",
+                "terjadi", "kalau", "sesuatu", "benar", "hanya", "tidak", "pernah", "selama", "sampai", "terus"}
+
+
+def kata_topik(*teks):
+    return {w for w in _kata(" ".join(teks)) if len(w) >= 4 and w not in _BUKAN_TOPIK}
+
+
+def setopik(k, kata):
+    """Judul/keterangan/isi klip menyebut subjek video atau adegan ("Varanus komodoensis", "Ausbreitung der
+    Komodowarane")."""
+    teks = _kata(f"{k.get('judul') or ''} {k.get('teks') or ''} {k.get('isi_ai') or ''}")
+    return any(w.startswith(t) for w in teks for t in kata)
 
 
 def nilai_latar(k):
-    """Kelayakan klip sebagai latar bergerak: skor latar dari AI atau skor tepatnya, mana yang lebih tinggi."""
-    return max(k.get("skor_ai") or 0, k.get("skor_latar") or 0)
+    """Kelayakan klip sebagai latar bergerak. Klip yang menyebut subjeknya (atau tepat ≥7): skor latar dari AI atau
+    skor tepatnya, mana yang lebih tinggi. Klip lain hanya dinilai dari skor latarnya dan baru layak kalau tempatnya
+    jelas berhubungan: dulu bola sepak di rumput (skor 6 "setema", latar 3), pria ber-headphone (6, latar 2), dan
+    burung camar berburu ikan (6, latar 6) jadi latar narasi komodo karena diambil yang tertinggi."""
+    lat = k.get("skor_latar")
+    if lat is None or k.get("setopik", True) or (k.get("skor_ai") or 0) >= SKOR_BAGUS:
+        return max(k.get("skor_ai") or 0, lat or 0)
+    return lat if lat >= LATAR_JELAS else min(lat, LATAR_BAGUS - 1)
 
 
 def urutkan_untuk_adegan(cfg, narasi, q, format_video, terpakai, cek_gambar, batal=None, log=print,
@@ -1247,6 +1269,7 @@ def urutkan_untuk_adegan(cfg, narasi, q, format_video, terpakai, cek_gambar, bat
     # kata subjek VIDEO (untuk heuristik) — terpisah dari `subjek` ADEGAN yang dinilai AI. Dulu namanya sama, jadi
     # juri AI menerima "SUBJEK UTAMA: {'misteri', 'pendaratan', ...}" dan menilai cocok-tema, bukan cocok-adegan.
     kata_video = set(_kata(judul)) | set(_kata(" ".join(k.get("kueri", "") for k in topik[:1])))
+    kata_subjek = kata_topik(judul, " ".join(k.get("kueri", "") for k in topik[:1]), subjek)
     for k in kandidat:
         k["skor_h"] = nilai_heuristik(k, format_video, terpakai, kata_video, video=video)
     kandidat.sort(key=lambda k: -k["skor_h"])
@@ -1278,6 +1301,7 @@ def urutkan_untuk_adegan(cfg, narasi, q, format_video, terpakai, cek_gambar, bat
                         k["skor_ai"], k["isi_ai"] = s[0], s[1]
                         if s[2] is not None:
                             k["skor_latar"] = s[2]
+                            k["setopik"] = setopik(k, kata_subjek)
                 # cek nalar: yang dianggap tepat (≥7) diperiksa ulang lewat teks; yang tidak nyambung jadi "setema" (5)
                 tinggi = [k for k in dilihat if (k.get("skor_ai") or 0) >= SKOR_BAGUS]
                 nalar = cek_nalar(cfg, narasi, tinggi, batal, lihat=lihat, subjek=subjek) if tinggi else []
@@ -1365,9 +1389,12 @@ def kandidat_analogi(cfg, benda, narasi, cek_gambar, batal=None, log=print):
         return (potongan or semua)[:3]
     ronde = []
     if potongan:
+        # "sendirian": untuk "berat manusia dewasa" dulu lolos potongan anak perempuan memeluk anjing
         ronde.append((potongan, f"{benda} UTUH (seluruh badan/bentuknya terlihat dari ujung ke ujung, tidak "
                                 "terpotong) yang sudah dipisahkan dari latarnya; satu benda/makhluk yang jelas, bukan "
-                                "sebagian atau close-up, bukan kartun, bukan benda/hewan lain"))
+                                "sebagian atau close-up, bukan kartun, bukan benda/hewan lain. Harus SENDIRIAN: kalau "
+                                "ada orang, hewan, atau benda lain yang ikut menempel (orang memeluk hewan, orang di "
+                                "atas kendaraan), skor subjek maksimal 3"))
     dipotong = {identitas(k) for k in potongan}
     ronde.append(([k for k in semua if identitas(k) not in dipotong][:4],
                   f"foto {benda} yang jelas: seluruh benda/makhluknya terlihat utuh (tidak terpotong tepi foto, bukan "

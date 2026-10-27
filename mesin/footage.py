@@ -81,8 +81,9 @@ _UMUM_LATAR = {"aerial", "view", "views", "drone", "close", "closeup", "up", "ti
 # Klip cuaca/bencana (citra satelit badai, banjir, kebakaran) hanya jadi latar kalau kuerinya memang meminta itu:
 # "tropical island coast" pernah mendapat "Ernesto Brings Dangerous Seas to North America's Atlantic Coast" (Hurricane
 # Ernesto) untuk narasi evolusi komodo.
-PERISTIWA = re.compile(r"hurricanes?|cyclones?|typhoons?|\bstorms?\b|tornado(es)?|\bfloods?\b|flooding|tsunami|"
-                       r"earthquakes?|wildfires?|\bfires?\b|disasters?|drought|landslides?|avalanches?|blizzard|"
+# Tanpa \b di depan: kata gabungan ("Bushfires and Grassfires dot the Australian Outback", "thunderstorm") ikut.
+PERISTIWA = re.compile(r"hurricanes?|cyclones?|typhoons?|storms?\b|tornado(es)?|floods?\b|flooding|tsunami|"
+                       r"earthquakes?|fires?\b|disasters?|drought|landslides?|avalanches?|blizzard|"
                        r"\bwar\b|explosion|crash", re.I)
 # Kata sifat di kueri latar: ikut menjelaskan tempatnya, tapi judul klip yang hanya cocok di kata sifat ("Tropical
 # Cyclone", "Deep Purple") belum tentu tempat itu.

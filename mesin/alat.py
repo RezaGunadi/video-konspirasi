@@ -184,19 +184,19 @@ def _tunggu_giliran(url):
         _terakhir[situs] = time.time()
 
 
-def http_get(url, **kw):
+def http_get(url, ulang=4, **kw):
     kw.setdefault("timeout", 30)
-    for coba in range(4):
+    for coba in range(ulang):
         try:
             _tunggu_giliran(url)
             r = _sesi.get(url, **kw)
-            if r.status_code == 429 or r.status_code >= 500:
+            if (r.status_code == 429 or r.status_code >= 500) and coba < ulang - 1:
                 saran = r.headers.get("retry-after", "")
                 time.sleep(min(20, int(saran)) if saran.isdigit() else 3 + coba * 4)
                 continue
             return r
         except requests.RequestException:
-            if coba == 3:
+            if coba == ulang - 1:
                 raise
             time.sleep(2)
     return r

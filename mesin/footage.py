@@ -120,6 +120,36 @@ def orang_tak_relevan(k, narasi):
     return bool(orang) and not _NARASI_ORANG.search(narasi or "")
 
 
+# Klip yang subjeknya HEWAN: "Seagulls hunting for fish in the sea" (setema 6, latar 7, dari kata kunci "predator
+# hunting scene") pernah tampil dua kali di narasi komodo.
+_HEWAN = re.compile(
+    r"\b(birds?|seagulls?|gulls?|pelicans?|eagles?|hawks?|owls?|parrots?|pigeons?|ducks?|geese|goose|swans?|"
+    r"flamingos?|penguins?|chickens?|hens?|roosters?|ostrich(es)?|herons?|storks?|crows?|sparrows?|"
+    r"dogs?|pupp(y|ies)|cats?|kittens?|horses?|cows?|cattle|bulls?|sheep|goats?|pigs?|camels?|donkeys?|"
+    r"lions?|tigers?|leopards?|cheetahs?|jaguars?|bears?|wolf|wolves|fox(es)?|deer|elephants?|giraffes?|zebras?|"
+    r"rhinos?|hippos?|buffalo(es)?|antelopes?|gazelles?|kangaroos?|koalas?|monkeys?|apes?|gorillas?|chimpanzees?|"
+    r"orangutans?|baboons?|lemurs?|rabbits?|mice|mouse|rats?|squirrels?|bats?|"
+    r"fish(es)?|sharks?|whales?|dolphins?|seals?|turtles?|tortoises?|crabs?|lobsters?|shrimps?|octopus(es)?|"
+    r"squids?|jellyfish|starfish|crocodiles?|alligators?|snakes?|pythons?|cobras?|lizards?|iguanas?|geckos?|"
+    r"chameleons?|frogs?|toads?|insects?|butterfl(y|ies)|bees?|spiders?|beetles?|mosquito(es)?|dinosaurs?|"
+    r"dragons?)\b", re.I)
+
+
+def hewan_lain(k, konteks):
+    """Klip video tentang hewan lain, padahal konteksnya (narasi + kata kunci + subjek video) membahas hewan tertentu,
+    dan tidak dinilai tepat oleh juri AI. Juri memberi burung camar "setema" untuk narasi komodo; klip komodo yang
+    memangsa rusa tetap boleh karena komodonya disebut. Konteks tanpa hewan (tekanan air di video Palung Mariana):
+    ubur-ubur laut dalam hanya latar tempatnya, jadi tidak ditolak di sini. Skor klip pinjaman menilai narasi adegan
+    lain, jadi tidak dihitung."""
+    if k.get("jenis") != "video" or ((k.get("skor_ai") or 0) >= SKOR_BAGUS and not k.get("pinjam")):
+        return False
+    hewan = [m.group(0).lower() for m in _HEWAN.finditer(k.get("judul") or k.get("teks") or "")]
+    if not hewan or not _HEWAN.search(konteks or ""):
+        return False
+    kata = _kata(konteks)
+    return not any(_kata_sama(h, w) for h in hewan for w in kata)
+
+
 def arsip_tak_relevan(k, narasi):
     """Film arsip/siaran/ceramah yang tidak dibutuhkan narasi (narasinya tidak menyebut tahun lampau)."""
     if k.get("jenis") != "video" or not ARSIP.search(f"{k.get('judul') or ''} {k.get('teks') or ''}"):
@@ -149,24 +179,28 @@ def _kata_sama(a, b):
                                  and panjang[len(pendek):] in _AKHIRAN)
 
 
-def cocok_judul(k, kueri):
+def cocok_judul(k, kueri, semua=False):
     """Judul klip menyebut tempat yang dicari ("Underwater view of a coral reef" untuk "deep sea underwater"). Klip
     latar yang TIDAK dinilai AI hanya dipakai kalau cocok begini. Hanya judulnya, kata utuh: dulu keterangan panjang
     ikut dicocokkan per potongan kata, jadi "desert sand dunes" mendapat akrobat di pantai ("…on the sand near the
     seashore"), pulau pasir ("Sandbar island"), dan festival "Halloween Weekend 2016". Kata sifat saja tidak cukup:
-    "tropical island beach" pernah mendapat "Tropical Cyclone Freddy" (citra satelit badai)."""
+    "tropical island beach" pernah mendapat "Tropical Cyclone Freddy" (citra satelit badai).
+    semua=True untuk nama subjek: setiap katanya harus disebut. Kartun "The Dragon & the Professor" (Wild
+    Thornberrys) pernah lolos untuk "Komodo dragon" hanya karena kata "Dragon"."""
     kata = [w for w in _kata(kueri) if w not in _UMUM_LATAR and len(w) >= 3]
     kata = [w for w in kata if w not in _SIFAT_LATAR] or kata
     judul = _kata(k.get("judul") or k.get("teks") or "")
     if PERISTIWA.search(f"{k.get('judul') or ''} {k.get('teks') or ''}") and not PERISTIWA.search(kueri):
         return False
-    return any(_kata_sama(w, x) for w in kata for x in judul)
+    cocok = [any(_kata_sama(w, x) for x in judul) for w in kata]
+    return all(cocok) if semua and kata else any(cocok)
 
 
-def klip_latar(cfg, kueri, format_video, kecuali=(), narasi="", log=print, maks=4):
+def klip_latar(cfg, kueri, format_video, kecuali=(), narasi="", log=print, maks=4, subjek=""):
     """Klip suasana untuk adegan yang tidak punya klip yang pas: dicari dengan kueri latar dari AI (tempat di dunia
     topik video: "deep sea underwater"), adegan ini dulu lalu adegan-adegan terdekat. Dulu daftar cadangan tetap
     ("desert dunes aerial", "mountains aerial") — narasi lempeng di dasar Samudra Pasifik tampil dengan unta di gurun.
+    Kueri yang sama dengan subjek video dicocokkan semua katanya (cocok_judul semua=True).
     Mengembalikan (kueri_terpakai, [kandidat ditandai cadangan])."""
     for q in [x for x in dict.fromkeys(kueri) if x][:3]:
         try:
@@ -174,10 +208,13 @@ def klip_latar(cfg, kueri, format_video, kecuali=(), narasi="", log=print, maks=
         except Exception as e:
             log(f"  Klip latar “{q}” gagal dicari: {e}")
             continue
-        cocok = [k for k in ks if k["jenis"] == "video" and k["id"] not in kecuali and cocok_judul(k, q)
-                 and not arsip_tak_relevan(k, narasi) and not BUKAN_SUBJEK.search(k.get("judul") or "")]
+        nama = q == subjek
+        cocok = [k for k in ks if k["jenis"] == "video" and k["id"] not in kecuali and cocok_judul(k, q, nama)
+                 and not arsip_tak_relevan(k, narasi) and not BUKAN_SUBJEK.search(k.get("judul") or "")
+                 and not hewan_lain(k, f"{narasi} {q} {subjek}")]
         if cocok:
-            return q, [{**k, "cadangan": True, "kueri": q} for k in cocok[:maks]]
+            return q, [{**k, "cadangan": True, "kueri": q, **({"kueri_subjek": True} if nama else {})}
+                       for k in cocok[:maks]]
     return "", []
 
 
@@ -548,11 +585,20 @@ def openverse(q):
 
     def f():
         global _openverse_habis
-        r = http_get("https://api.openverse.org/v1/images/", params={
-            "q": q, "license_type": "commercial,modification", "page_size": 12, "mature": "false"})
+        # Sekali coba, 15 detik: Openverse pernah timeout di hampir setiap adegan dan tiap pencarian menunggu ±2 menit
+        # (4x ulang @30 detik), padahal sumber lain sudah selesai. Kalau tidak menjawab, dilewati 15 menit.
+        try:
+            r = http_get("https://api.openverse.org/v1/images/", ulang=1, timeout=15, params={
+                "q": q, "license_type": "commercial,modification", "page_size": 12, "mature": "false"})
+        except requests.RequestException:
+            _openverse_habis = time.time() + 900
+            raise RuntimeError("Openverse tidak menjawab, dilewati 15 menit")
         if r.status_code == 429:
             _openverse_habis = time.time() + 3600
             raise RuntimeError("batas pencarian Openverse hari ini habis, dilewati dulu")
+        if r.status_code >= 500:  # jangan disimpan di cache sebagai "tidak ada hasil"
+            _openverse_habis = time.time() + 900
+            raise RuntimeError(f"Openverse error {r.status_code}, dilewati 15 menit")
         if not r.ok:
             return []
         hasil = []

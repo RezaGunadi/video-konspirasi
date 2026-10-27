@@ -739,7 +739,7 @@ def _siapkan_satu_foto(p, a, cfg, batal, judul_video):
         log(p, "  🆚 foto perbandingan tidak ketemu — adegan ini memakai footage biasa")
 
 
-def _klip_layak(k, cek=True, latar=""):
+def _klip_layak(k, cek=True, latar="", narasi=""):
     """Klip boleh jadi latar shot: latarnya cocok menurut AI, klip latar cadangan yang judulnya menyebut tempatnya,
     atau pinjaman yang lolos _boleh_dipinjam. Dicek ulang tiap kali direncanakan: pinjaman dari rencana lama dulu
     langsung dianggap layak (kebakaran di Afrika Selatan, latar 3, untuk narasi Sahara hijau)."""
@@ -748,6 +748,8 @@ def _klip_layak(k, cek=True, latar=""):
     if not cek:
         return True
     if k.get("judul_cocok") is False:  # judulnya ditolak _saring_judul
+        return False
+    if narasi and footage.orang_tak_relevan(k, narasi):
         return False
     if k.get("pinjam"):
         return _boleh_dipinjam(k, cek, latar)
@@ -760,10 +762,10 @@ def _klip_layak(k, cek=True, latar=""):
     return footage.nilai_latar(k) >= footage.LATAR_BAGUS
 
 
-def _shot_layak(k, latar=""):
+def _shot_layak(k, latar="", narasi=""):
     """Sisa kandidat (_kandidat_baru) yang masih pantas tampil di tata visual "video + stiker"."""
     if k["jenis"] == "video":
-        return _klip_layak(k, latar=latar)
+        return _klip_layak(k, latar=latar, narasi=narasi)
     return (k.get("skor_ai") or 0) >= 5 or (k.get("skor_ai") is None and bool(k.get("topik")))
 
 
@@ -903,6 +905,13 @@ def _latar_cadangan(p, i, cfg, kand):
     kueri = _kueri_latar(p, i)
     if not kueri and not _fakta(p):  # proyek misteri lama: suasana kelam umum masih pas
         kueri = [naskah.cadangan(False)[i % 10]]
+    # Klip tempat habis terpakai: subjek utama video (klip komodo) sebagai cadangan terakhir. Dulu adegan reels
+    # "osteoderm" tidak punya klip sama sekali dan menampilkan foto fosil 6,5 detik layar penuh.
+    with _lock:
+        induk = _proyek.get(p.get("induk") or "") or {}
+    subjek = _subjek(p) or _subjek(induk)
+    if subjek and _fakta(p):
+        kueri = [q for q in kueri if q != subjek][:2] + [subjek]
     # kandidat adegan lain juga dikecualikan: klip tempat yang sudah habis dipotong adegan lain tidak membantu
     kecuali = {k["id"] for k in kand} | {k["id"] for b in p["adegan"] for k in (b.get("kandidat") or [])}
     q_cad, cad = footage.klip_latar(cfg, kueri, p["opsi"]["format"], kecuali, p["adegan"][i]["teks"],
@@ -1019,7 +1028,7 @@ def _rencana_video(p, a, i, frames_adegan, ketat=True):
                 - (4 if k.get("cadangan") else 0) - (5 if k.get("pinjam") else 0))
 
     latar = (a.get("q") or {}).get("latar") or ""
-    klip = sorted((j for j, k in enumerate(kand) if _klip_layak(k, cek, latar)), key=lambda j: -nilai(j))
+    klip = sorted((j for j, k in enumerate(kand) if _klip_layak(k, cek, latar, a["teks"])), key=lambda j: -nilai(j))
     sendiri = sum(1 for j in klip if not kand[j].get("pinjam"))
     # Pinjam dulu, baru potongan ditentukan: dulu adegan "tanpa klip" dipotong ±2,6 detik ala foto lalu klip
     # pinjaman mengisi potongan sependek 1,9 detik.
@@ -1053,8 +1062,18 @@ def _rencana_video(p, a, i, frames_adegan, ketat=True):
     ada_klip = bool(klip)
     if not ada_klip:
         # Tanpa klip sama sekali: tiap foto yang pas tampil sekali, lebih lama (tetap ada zoom/pan). Dulu dipotong
-        # ±2,6 detik sehingga satu peta Guam tampil 5x berturut-turut @2 detik.
-        jumlah = max(1, min(math.ceil(a["durasi"] / (footage.MAKS_FOTO - 0.4)), len(foto)))
+        # ±2,6 detik sehingga satu peta Guam tampil 5x berturut-turut @2 detik. Kalau foto tepatnya kurang, foto
+        # setema / foto artikel topik ikut mengisi supaya tiap foto tetap ±3 detik: dulu satu foto fosil tampil 6,5
+        # detik padahal ada "Komodo dragon skin" dari artikel topiknya.
+        perlu = max(1, min(math.ceil(a["durasi"] / (footage.MAKS_FOTO - 0.4)), int(a["durasi"] / 2.5)))
+        if cek and len(foto) < perlu:
+            lain = sorted((j for j, k in enumerate(kand) if j not in foto and k["jenis"] != "video"
+                           and not k.get("analogi") and not k.get("pinjam") and not k.get("gagal")
+                           and footage.identitas(k) not in dipakai and _shot_layak(k)),
+                          key=lambda j: -((kand[j].get("skor_ai") or 4.5) + (0.5 if kand[j].get("topik") else 0)
+                                          + 0.1 * (kand[j].get("skor_h") or 0)))
+            foto += lain[:perlu - len(foto)]
+        jumlah = max(1, min(perlu, len(foto)))
     potong = _bagi_shot(a, frames_adegan, jumlah, minimum=footage.MIN_SHOT_VIDEO)
     banding = (a.get("banding") or {}).get("siap")
     if banding and potong[0] - maks_foto >= fps:  # perbandingan 🆚 = dua foto, jadi ikut batas 3 detik
@@ -1112,7 +1131,7 @@ def _rencana_video(p, a, i, frames_adegan, ketat=True):
             # Sisa kandidat yang dinilai tidak nyambung (pohon kelapa & jalan kota untuk narasi dasar Palung Mariana):
             # klip sebelumnya diperpanjang saja, walaupun jadi satu take panjang. Shot pertama dibiarkan kosong supaya
             # _rencanakan mencari klip tempat dulu.
-            if j is not None and cek and ketat and not _shot_layak(kand[j], latar) and (
+            if j is not None and cek and ketat and not _shot_layak(kand[j], latar, a["teks"]) and (
                     not shots or shots[-1].get("pilih") is None or kand[shots[-1]["pilih"]]["jenis"] == "video"):
                 j = None
         if j is None:
@@ -1302,7 +1321,7 @@ def l_footage(p, cfg, batal):
             if video:
                 # klip yang layak dulu (AI hanya melihat sebagian), lalu foto & sisanya: 20 kandidat pertama disimpan
                 kand.sort(key=lambda k: -(footage.nilai_latar(k) + (1 if k["jenis"] == "video" else 0)))
-                if not any(_klip_layak(k, o["cek_gambar"], a["q"].get("latar") or "") for k in kand):
+                if not any(_klip_layak(k, o["cek_gambar"], a["q"].get("latar") or "", a["teks"]) for k in kand):
                     kand = _latar_cadangan(p, i, cfg, kand) + kand
             if video and a["q"].get("analogi"):
                 # "setara dengan menumpuk 1.600 gajah": foto benda pembandingnya jadi stiker bertumpuk

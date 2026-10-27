@@ -96,6 +96,29 @@ def _kata(teks):
     return [k for k in re.findall(r"[a-z0-9]+", (teks or "").lower()) if k not in KATA_UMUM]
 
 
+# Klip yang subjeknya ORANG (judul atau isi menurut juri AI). Untuk narasi tentang hewan/alam, juri AI pernah memberi
+# 8/8 ke "Boxers hitting in a fight" untuk komodo yang bertarung; begitu juga wanita melambai di dermaga, pria
+# salto di pantai, dan pemain ski sebagai latar.
+_ORANG_JUDUL = re.compile(r"\b(man|men|woman|women|people|person|boy|girl|kids?|child|children|couple|tourists?|"
+                          r"boxers?|boxing|athletes?|players?|crowd|dancers?|dancing|skiers?|surfers?|soldiers?|"
+                          r"police|reporter|presenter|businessman|family|friends|lady|guy|selfie)\b", re.I)
+_ORANG_ISI = re.compile(r"\b(pria|wanita|orang|perempuan|laki-laki|anak-anak|petinju|penari|turis|wisatawan|tentara|"
+                        r"polisi|pemain|atlet|kerumunan|pasangan|reporter|pembawa acara)\b", re.I)
+_NARASI_ORANG = re.compile(r"\b(manusia|orang|ilmuwan|peneliti|penduduk|warga|pendaki|penyelam|nelayan|pemburu|"
+                           r"turis|wisatawan|penjelajah|tentara|petani|suku|masyarakat|pria|wanita|tokoh|raja|ratu|"
+                           r"presiden|astronot|arkeolog|pelaut|penambang|pekerja)\w*", re.I)
+
+
+def orang_tak_relevan(k, narasi):
+    """Klip video yang subjeknya orang, padahal narasinya tidak membahas manusia. Isi dari juri AI hanya dilihat kata
+    pertamanya (subjeknya): "Komodo berjalan di dekat orang" tetap klip komodo."""
+    if k.get("jenis") != "video":
+        return False
+    orang = _ORANG_JUDUL.search(k.get("judul") or k.get("teks") or "") or \
+        _ORANG_ISI.match((k.get("isi_ai") or "").strip())
+    return bool(orang) and not _NARASI_ORANG.search(narasi or "")
+
+
 def arsip_tak_relevan(k, narasi):
     """Film arsip/siaran/ceramah yang tidak dibutuhkan narasi (narasinya tidak menyebut tahun lampau)."""
     if k.get("jenis") != "video" or not ARSIP.search(f"{k.get('judul') or ''} {k.get('teks') or ''}"):

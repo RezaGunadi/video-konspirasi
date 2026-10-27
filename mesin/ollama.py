@@ -29,7 +29,9 @@ class _Putus(Exception):
     """Ollama tidak bisa dihubungi atau jawabannya terputus (layak dicoba lagi)."""
 
 
-def _chat(cfg, pesan, *, format=None, suhu=0.7, batal=None, saat_token=None, maks_token=None, timeout=3600):
+# Prompt riset ±8.800 token di mini PC yang kepanasan (±3,5 token/detik) baru selesai dibaca ±42 menit,
+# padahal selama itu Ollama belum mengirim apa pun; batas 1 jam membuat naskah Lubang hitam gagal.
+def _chat(cfg, pesan, *, format=None, suhu=0.7, batal=None, saat_token=None, maks_token=None, timeout=7200):
     body = {
         "model": cfg["model"],
         "messages": pesan,

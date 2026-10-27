@@ -249,6 +249,11 @@ jaringan lokal, mengizinkan Ollama diakses dari LAN, lalu menampilkan CPU/RAM/IP
 bisa dipasang dari laptop, dan `ollama_url` di setelan diarahkan ke `http://<IP mini PC>:11434`. Ollama di LAN
 tidak memakai password: siapa pun di jaringan yang sama bisa memakainya.
 
+Setelan Ollama di mini PC Linux (`/etc/systemd/system/ollama.service.d/video-ai.conf`):
+`OLLAMA_FLASH_ATTENTION=1` dan `OLLAMA_KV_CACHE_TYPE=q8_0` (model ±8 GB), serta `LLAMA_ARG_CACHE_RAM=1024`.
+Tanpa yang terakhir, llama-server menyimpan cache prompt sampai 8 GB di RAM; setelah ±14 jam RAM penuh, swap
+terpakai 6 GB, dan AI melambat ke ±2 token/detik sampai naskah gagal karena batas waktu 1 jam.
+
 ## Teknis
 
 - Python venv: `.venv` · server: `app.py` (port 3220, hanya bisa dibuka dari laptop ini)

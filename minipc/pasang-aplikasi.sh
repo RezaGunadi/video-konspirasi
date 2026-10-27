@@ -23,16 +23,17 @@ mkdir -p "$HOME/tools/hf-cache" "$HOME/tools/openvoice"
 .venv/bin/pip install -q -r requirements.txt
 
 mkdir -p "$HOME/.config/systemd/user"
+# Service --user tidak bisa menunggu network-online.target milik sistem: setelah mati lampu, pull jalan sebelum
+# DNS siap ("Could not resolve host") dan mini PC tetap memakai kode lama. Jadi pull dicoba ulang sampai ±60 detik.
 cat > "$HOME/.config/systemd/user/video-ai.service" <<EOF
 [Unit]
 Description=Video Konspirasi AI (pekerja mini PC)
-After=network-online.target
 
 [Service]
 WorkingDirectory=$APP
 Environment=VIDEO_AI_LAN=1
 Environment=PYTHONUNBUFFERED=1
-ExecStartPre=-/usr/bin/git -C $APP pull --ff-only --quiet
+ExecStartPre=-/bin/sh -c 'for coba in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do /usr/bin/git -C $APP pull --ff-only --quiet && exit 0; sleep 3; done; exit 1'
 ExecStart=$APP/.venv/bin/python app.py
 Restart=on-failure
 RestartSec=10

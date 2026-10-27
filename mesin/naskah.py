@@ -41,6 +41,7 @@ GAYA_NASKAH = {
 - Lalu jelaskan kenapa itu aneh: bagaimana biasanya, lalu apa yang berbeda di sini ("Sungai besar biasanya berkelok dan berpindah. Tapi Nil tidak.").
 - Susun sebagai rangkaian pertanyaan yang dijawab satu per satu. Tiap jawaban membuka pertanyaan berikutnya, dan tiap paragraf diakhiri pancingan ke paragraf berikutnya ("Tapi itu belum yang paling aneh.", "Lalu dari mana tekanan sebesar itu?"). Urutkan dari yang mengejutkan ke yang PALING mengejutkan; jawaban hook disimpan untuk menjelang akhir.
 - Untuk konsep yang sulit, pakai analogi sehari-hari ("bayangkan selang taman yang dibiarkan menyala", "cara kerjanya mirip lampu lava raksasa") dan pembanding skala yang mudah dibayangkan ("seluas 32 ribu kolam renang olimpiade").
+- Angka dan pembanding dari BAHAN FAKTA dipakai PERSIS dengan acuannya. Jangan menggabungkan angka atau satuan dari dua kalimat berbeda, jangan menambah acuan yang tidak ditulis sumbernya ("di setiap inci persegi", "di atas tubuhmu"), dan jangan membesar-besarkan angka ("ribuan ton" padahal sumbernya 8 ton). Kalau sumber tidak menyebut pembanding itu berlaku untuk luas atau benda apa, sebut saja "setara dengan berat …".
 - PADAT: setiap fakta, angka, dan perbandingan disebut SATU KALI saja di seluruh naskah. JANGAN merangkum ulang isi yang sudah disebut, jangan "Pertama… Kedua… Ketiga…" yang mengulang penjelasan sebelumnya. Buang kalimat yang tidak menambah informasi baru atau ketegangan, termasuk transisi kosong seperti "Namun, untuk memahami…", "Lantas, bagaimana…", "Hal ini membuktikan bahwa…". Kata "luar biasa", "Namun", dan "Sebagai perbandingan" masing-masing paling banyak satu kali.
 - Sebut angka konkret (tahun, ukuran, jarak, umur) dengan satuan yang biasa dipakai di Indonesia (meter, kilometer, derajat Celsius).
 - Penutup: jawab pertanyaan dari hook dengan satu atau dua kalimat yang bikin "wow" (boleh sedikit jenaka), lalu satu pertanyaan ke penonton.""",
@@ -397,7 +398,11 @@ BAGIAN_PANJANG = {  # instruksi bagian pertama/terakhir kerangka & naskah panjan
                            "dan penutup — BUKAN rangkuman."),
         "pertama": ("Ini bagian PERTAMA: dua kalimat pertama adalah hook (fakta paling mengejutkan, lalu kontras "
                     "\"tapi…\"; masing-masing maksimal 14 kata), lalu satu kalimat janji apa yang akan terjawab, lalu "
-                    "kenapa itu aneh. Tanpa pengantar, definisi panjang, atau sapaan."),
+                    "kenapa itu aneh dengan minimal satu fakta konkret (angka, nama, atau tempat) dari BAHAN FAKTA. "
+                    "Tanpa pengantar, definisi panjang, atau sapaan. Jangan mengulang pertanyaan hook dengan kata lain "
+                    "dan jangan kalimat pengantar kosong seperti \"Keanehan ini membawa kita pada…\" atau \"Kita perlu "
+                    "melihat lebih dalam…\"."),
+        "porsi_awal": 0.55,
         "terakhir": ("Ini bagian TERAKHIR: JANGAN merangkum dan JANGAN mengulang fakta atau angka yang sudah disebut. "
                      "Ungkap jawaban yang menjawab hook di awal video, satu kalimat dampaknya yang bikin wow (boleh "
                      "sedikit jenaka), lalu satu pertanyaan ke penonton."),
@@ -411,6 +416,7 @@ BAGIAN_PANJANG = {  # instruksi bagian pertama/terakhir kerangka & naskah panjan
                            "\"bisa jadi aku salah\", dan penutup."),
         "pertama": ("Ini bagian PERTAMA: buka dengan hal yang pasti pernah didengar penonton lalu belokkan (\"tapi yang "
                     "mau aku tunjukin bukan teori, ini yang tercatat\"), lalu jawab skeptisnya penonton."),
+        "porsi_awal": 0.55,
         "terakhir": ("Ini bagian TERAKHIR: rangkum titik-titik yang sudah disambungkan dalam beberapa kalimat pendek, "
                      "sebut versi resmi singkat secara adil, lalu sikap pribadi \"ini kacamata aku, bisa jadi aku salah, "
                      "tapi semua tadi tercatat\", lalu satu pertanyaan ke penonton."),
@@ -421,6 +427,7 @@ BAGIAN_PANJANG = {  # instruksi bagian pertama/terakhir kerangka & naskah panjan
                            "satu dua kalimat fakta yang terbukti, dan penutup."),
         "pertama": "Ini bagian PERTAMA: langsung lempar kecurigaan terbesar sebagai klaim dan bandingkan secara visual, "
                    "jangan menjelaskan versi resmi.",
+        "porsi_awal": 0.55,
         "terakhir": "Ini bagian TERAKHIR: berikan twist berupa kemungkinan jalan tengah yang mengejutkan (tetap dengan "
                     "penanda klaim), lalu satu dua kalimat fakta yang sudah terbukti tanpa menggurui, lalu tutup dengan "
                     "satu pertanyaan ke penonton.",
@@ -524,6 +531,11 @@ def _tulis_panjang(cfg, bahan, riset, durasi, batal, saat_token, log, gaya="twis
         # Dengan aturan "padat" model menulis ±125 kata walau diminta 190 (Komodo: 497 dari 660 kata, video 5 menit
         # jadi 3:18): kekurangan bagian sebelumnya dibagi ke bagian yang tersisa.
         minta = min(int(per_bagian * 1.6), max(per_bagian, int((total - sudah) / (len(bagian) - i) * 1.15)))
+        if i == 0 and bp.get("porsi_awal"):
+            # Isi bagian pertama gaya ber-hook cuma hook, janji, dan kenapa aneh: dengan jatah penuh (±190 kata) model
+            # mengisinya dengan pertanyaan hook yang diulang-ulang (Mariana: ±50 detik tanpa fakta). Sisanya otomatis
+            # dibagi ke bagian berikutnya lewat rumus di atas.
+            minta = int(per_bagian * bp["porsi_awal"])
 
         def token(teks, sudah=sudah):
             if saat_token:

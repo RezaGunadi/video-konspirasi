@@ -1199,6 +1199,36 @@ def cek_nalar(cfg, narasi, kandidat, batal=None, lihat="", subjek=""):
     return [bool(j.get(f"cocok_{i + 1}", True)) for i in range(len(kandidat))]
 
 
+def cek_judul_latar(cfg, narasi, latar, kandidat, batal=None):
+    """Klip yang tidak dilihat AI (cadangan / belum dinilai) hanya dikenal dari judulnya, jadi judulnya diperiksa
+    model teks: apakah klip itu memperlihatkan tempatnya, bukan acara/orang/berita yang kebetulan memakai kata yang
+    sama. Dulu "10th Mountain Division tests new technology" (tentara), "India Counts Cost of Disasters in Himalayas"
+    (berita), dan "Complexity Science- 9 Earth Systems Science" (kuliah) lolos karena menyebut mountain/Himalayas/
+    Earth. Mengembalikan list bool (True = cocok) sepanjang kandidat (maksimal 8), atau None kalau gagal."""
+    kandidat = kandidat[:8]
+    if not kandidat:
+        return []
+    daftar = "\n".join(f"{i + 1}) {' '.join(str(k.get('judul') or k.get('teks') or '-').split())[:100]}"
+                       for i, k in enumerate(kandidat))
+    props = {f"cocok_{i + 1}": {"type": "boolean"} for i in range(len(kandidat))}
+    pesan = [{"role": "user", "content": (
+        f"Narasi adegan video: \"{narasi}\"\n"
+        + (f"Latar yang dicari: {latar}\n" if latar else "")
+        + f"\nJudul klip stock video:\n{daftar}\n\n"
+        "Untuk tiap judul, cocok_N = true kalau klip itu kemungkinan besar memperlihatkan pemandangan tempat yang "
+        "dicari, atau benda/proses yang dibicarakan narasi, sehingga pas sebagai latar bergerak narasi itu. Tempat "
+        "sejenis di negara lain boleh (gurun lain untuk gurun Sahara). false kalau judulnya menunjukkan fokus lain: "
+        "orang atau kegiatan (tentara, turis, olahraga, ski, festival, pesta), berita, wawancara, kuliah atau "
+        "presentasi, iklan, jenis tempat yang berbeda (pantai untuk gurun, kota untuk hutan), atau hanya kebetulan "
+        "memakai kata yang sama.")}]
+    try:
+        j = ollama.chat_json(cfg, pesan, {"type": "object", "properties": props, "required": list(props)},
+                             batal=batal, maks_token=12 * len(kandidat) + 30, suhu=0.1)
+    except (RuntimeError, ValueError):
+        return None
+    return [bool(j.get(f"cocok_{i + 1}", True)) for i in range(len(kandidat))]
+
+
 def _pilih_untuk_dilihat(kandidat, q, sudah, terpakai, jumlah=4, video=False):
     """Kandidat yang dikirim ke AI: campuran gambar topik dan tiap jenis kata kunci, bukan sekadar 4 skor
     kata tertinggi (dulu foto "Loch Ness Monster" kalah oleh "whale swimming" dan tidak pernah dilihat AI).
@@ -1260,13 +1290,17 @@ def setopik(k, kata):
 
 
 def nilai_latar(k):
-    """Kelayakan klip sebagai latar bergerak. Klip yang menyebut subjeknya (atau tepat ≥7): skor latar dari AI atau
-    skor tepatnya, mana yang lebih tinggi. Klip lain hanya dinilai dari skor latarnya dan baru layak kalau tempatnya
-    jelas berhubungan: dulu bola sepak di rumput (skor 6 "setema", latar 3), pria ber-headphone (6, latar 2), dan
-    burung camar berburu ikan (6, latar 6) jadi latar narasi komodo karena diambil yang tertinggi."""
+    """Kelayakan klip sebagai latar bergerak. Klip yang tepat (≥7): skor latar dari AI atau skor tepatnya, mana yang
+    lebih tinggi. Klip yang menyebut subjeknya: skor latarnya. Klip lain juga dari skor latarnya, tapi baru layak
+    kalau tempatnya jelas berhubungan: dulu bola sepak di rumput (skor 6 "setema", latar 3), pria ber-headphone (6,
+    latar 2), dan burung camar berburu ikan (6, latar 6) jadi latar narasi komodo karena diambil yang tertinggi."""
     lat = k.get("skor_latar")
-    if lat is None or k.get("setopik", True) or (k.get("skor_ai") or 0) >= SKOR_BAGUS:
+    if lat is None or (k.get("skor_ai") or 0) >= SKOR_BAGUS:
         return max(k.get("skor_ai") or 0, lat or 0)
+    # Judul menyebut subjeknya: cukup latar ≥ LATAR_BAGUS — tapi skor latar AI tetap berlaku. Dulu skor subjeknya
+    # yang dipakai, jadi "Pottery Plate Shattering" (subjek 5, latar 3) jadi latar narasi lempeng ("plate") India.
+    if k.get("setopik", True):
+        return lat
     return lat if lat >= LATAR_JELAS else min(lat, LATAR_BAGUS - 1)
 
 

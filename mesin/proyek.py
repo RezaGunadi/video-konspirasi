@@ -742,6 +742,8 @@ def _klip_layak(k, cek=True, latar=""):
         return False
     if not cek:
         return True
+    if k.get("judul_cocok") is False:  # judulnya ditolak _saring_judul
+        return False
     if k.get("pinjam"):
         return _boleh_dipinjam(k, cek, latar)
     if k.get("cadangan"):
@@ -777,7 +779,7 @@ def _kandidat_baru(kand, dipakai, sudah_dipakai, di_adegan_ini):
     """Kandidat terbaik yang belum dipakai — juga bukan foto kembar dari sumber lain (versi crop/resize)."""
     # kandidat analogi hanya untuk stiker tumpukan (foto pejabat untuk "telapak tangan" pernah tampil layar penuh)
     belum = [j for j, k in enumerate(kand) if (footage.identitas(k) not in dipakai or k.get("pinjam"))
-             and not k.get("analogi") and not k.get("gagal")]
+             and not k.get("analogi") and not k.get("gagal") and k.get("judul_cocok") is not False]
     # Urutan pilihan: TEPAT menurut AI (≥ SKOR_BAGUS) → gambar tepat yang sudah tampil di adegan ini diulang
     # (gerak kamera beda) → setema (5-6) → belum dinilai → sisanya. Lebih baik mengulang gambar yang tepat daripada
     # menampilkan gambar yang tidak nyambung dengan narasi.
@@ -919,7 +921,7 @@ def _kueri_latar(p, i):
 
 # Naikkan setiap kali logika rencana shot berubah: adegan yang direncanakan versi lama disusun ulang saat langkah
 # footage jalan lagi (misalnya mini PC direstart di tengah footage), kandidatnya tetap.
-RENCANA_VERSI = 3
+RENCANA_VERSI = 4
 
 
 def _rencana_lemah(a):
@@ -936,7 +938,10 @@ def _rencanakan(p, a, i, cfg, frames_adegan):
     tempat yang belum tampil dulu; kandidat yang dinilai tidak nyambung baru dipakai kalau itu pun gagal."""
     a["rencana_versi"] = RENCANA_VERSI
     a["shots"] = _rencana_video(p, a, i, frames_adegan)
-    if not p["opsi"]["cek_gambar"] or not _rencana_lemah(a):
+    if not p["opsi"]["cek_gambar"]:
+        return
+    _saring_judul(p, a, i, cfg, frames_adegan)
+    if not _rencana_lemah(a):
         return
     if not a.get("latar_dicari"):
         a["latar_dicari"] = True
@@ -944,8 +949,43 @@ def _rencanakan(p, a, i, cfg, frames_adegan):
         if cad:
             a["kandidat"] = (cad + [k for k in a["kandidat"] if not k.get("pinjam")])[:22]
             a["shots"] = _rencana_video(p, a, i, frames_adegan)
+            _saring_judul(p, a, i, cfg, frames_adegan)
     if any(s.get("pilih") is None and not s.get("banding") for s in a["shots"]):
         a["shots"] = _rencana_video(p, a, i, frames_adegan, ketat=False)
+
+
+def _belum_dilihat(k):
+    """Klip yang hanya dikenal dari judulnya (cadangan / tidak sempat dilihat AI) dan judulnya belum diperiksa."""
+    return k["jenis"] == "video" and k.get("skor_ai") is None and k.get("skor_latar") is None \
+        and "judul_cocok" not in k and not k.get("gagal")
+
+
+def _saring_judul(p, a, i, cfg, frames_adegan):
+    """Klip yang dipilih rencana tapi tidak pernah dilihat AI diperiksa judulnya (satu panggilan model teks untuk
+    pilihan rencana + klip serupa lainnya). Yang ditolak tidak dipakai lagi dan adegannya direncanakan ulang."""
+    for _ in range(3):
+        kand = a["kandidat"]
+        dipilih = [kand[s["pilih"]] for s in a["shots"] if s.get("pilih") is not None]
+        latar = (a.get("q") or {}).get("latar") or ""
+        periksa = []
+        for k in dipilih + [k for k in kand if _klip_layak(k, True, latar)]:
+            if _belum_dilihat(k) and not any(k is x for x in periksa):
+                periksa.append(k)
+        periksa = periksa[:8]
+        if not any(any(k is x for x in periksa) for k in dipilih):
+            return
+        hasil = footage.cek_judul_latar(cfg, a["teks"], latar, periksa)
+        if hasil is None:  # model gagal: biarkan, jangan ditanya terus
+            for k in periksa:
+                k["judul_cocok"] = True
+            return
+        for k, ok in zip(periksa, hasil):
+            k["judul_cocok"] = ok
+        tolak = [k for k, ok in zip(periksa, hasil) if not ok]
+        if not tolak:
+            return
+        log(p, "  Judul klip tidak cocok: " + "; ".join((k.get("judul") or "")[:50] for k in tolak))
+        a["shots"] = _rencana_video(p, a, i, frames_adegan)
 
 
 def _rencana_video(p, a, i, frames_adegan, ketat=True):

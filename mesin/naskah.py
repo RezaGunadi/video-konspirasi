@@ -41,7 +41,8 @@ GAYA_NASKAH = {
 - Lalu jelaskan kenapa itu aneh: bagaimana biasanya, lalu apa yang berbeda di sini ("Sungai besar biasanya berkelok dan berpindah. Tapi Nil tidak.").
 - Susun sebagai rangkaian pertanyaan yang dijawab satu per satu. Tiap jawaban membuka pertanyaan berikutnya, dan tiap paragraf diakhiri pancingan ke paragraf berikutnya ("Tapi itu belum yang paling aneh.", "Lalu dari mana tekanan sebesar itu?"). Urutkan dari yang mengejutkan ke yang PALING mengejutkan; jawaban hook disimpan untuk menjelang akhir.
 - Untuk konsep yang sulit, pakai analogi sehari-hari ("bayangkan selang taman yang dibiarkan menyala", "cara kerjanya mirip lampu lava raksasa") dan pembanding skala yang mudah dibayangkan ("seluas 32 ribu kolam renang olimpiade").
-- Angka dan pembanding dari BAHAN FAKTA dipakai PERSIS dengan acuannya. Jangan menggabungkan angka atau satuan dari dua kalimat berbeda, jangan menambah acuan yang tidak ditulis sumbernya ("di setiap inci persegi", "di atas tubuhmu"), dan jangan membesar-besarkan angka ("ribuan ton" padahal sumbernya 8 ton). Kalau sumber tidak menyebut pembanding itu berlaku untuk luas atau benda apa, sebut saja "setara dengan berat …".
+- Angka dan pembanding dari BAHAN FAKTA dipakai PERSIS dengan acuannya. Jangan menggabungkan angka atau satuan dari dua kalimat berbeda, jangan menambah acuan yang tidak ditulis sumbernya ("di setiap inci persegi", "di atas tubuhmu"), dan jangan membesar-besarkan angka ("ribuan ton" padahal sumbernya 8 ton). Kalau sumber tidak menyebut pembanding itu berlaku untuk luas atau benda apa, sebut saja "setara dengan berat …". Pertahankan juga keterangan waktunya: angka yang menurut sumber berlaku dulu atau di awal ("mulai bergerak … per tahun", "pada zaman es") jangan ditulis seolah terjadi sekarang.
+- Perbandingan dengan benda sehari-hari yang angkanya TIDAK ada di BAHAN FAKTA ("lebih cepat dari tumbuhnya kuku", "setinggi gedung 30 lantai") hanya boleh kalau kamu sudah menghitung keduanya dalam satuan yang sama dan arahnya benar. Kalau ragu, sebut angkanya saja tanpa pembanding.
 - PADAT: setiap fakta, angka, dan perbandingan disebut SATU KALI saja di seluruh naskah. JANGAN merangkum ulang isi yang sudah disebut, jangan "Pertama… Kedua… Ketiga…" yang mengulang penjelasan sebelumnya. Buang kalimat yang tidak menambah informasi baru atau ketegangan, termasuk transisi kosong seperti "Namun, untuk memahami…", "Lantas, bagaimana…", "Hal ini membuktikan bahwa…". Kata "luar biasa", "Namun", dan "Sebagai perbandingan" masing-masing paling banyak satu kali.
 - Sebut angka konkret (tahun, ukuran, jarak, umur) dengan satuan yang biasa dipakai di Indonesia (meter, kilometer, derajat Celsius).
 - Penutup: jawab pertanyaan dari hook dengan satu atau dua kalimat yang bikin "wow" (boleh sedikit jenaka), lalu satu pertanyaan ke penonton.""",
@@ -309,27 +310,39 @@ def _buang_ulangan(sebelumnya, teks):
     return sebelumnya, teks
 
 
+_PENYAMBUNG = {"namun", "tapi", "tetapi", "dan", "bahkan", "lalu", "kemudian", "jadi", "nah", "sementara", "padahal",
+               "ternyata", "faktanya", "sebenarnya"}
+
+
 def buang_fakta_berulang(teks):
     """Model 12B sering menutup video panjang dengan rangkuman "Pertama… Kedua… Ketiga…" yang mengulang semua angka
     (naskah Palung Mariana menyebut 1.600 gajah, 1.071 kali tekanan, dan suhu 1-4 derajat masing-masing dua kali) —
     terasa bertele-tele. Kalimat yang angkanya SEMUA sudah pernah disebut dan kata-katanya sebagian besar sama dengan
     kalimat terdahulu dibuang; begitu juga kalimat tanpa angka baru yang hampir semua katanya sudah pernah diucapkan
-    ("Pertama, Palung Mariana terbentuk karena proses subduksi." di rangkuman: 14% kata baru)."""
-    sudah_angka, sudah_kata, semua, hasil = set(), [], set(), []
+    ("Pertama, Palung Mariana terbentuk karena proses subduksi." di rangkuman: 14% kata baru). Juga kalimat tanpa
+    angka baru yang 6 kata pertamanya sama dengan kalimat terdahulu: "Himalaya adalah barisan pegunungan raksasa di
+    Asia yang…" pernah membuka dua bagian berturut-turut."""
+    sudah_angka, sudah_kata, semua, sudah_awal, hasil = set(), [], set(), set(), []
     for par in teks.split("\n\n"):
         simpan = []
         for k in pecah_kalimat(par):
             angka = set(re.findall(r"\d+(?:[.,]\d+)*", k))
             kata = {w for w in re.findall(r"\w+", k.lower()) if len(w) > 3}
+            awal = re.findall(r"\w+", k.lower())
+            while awal and awal[0] in _PENYAMBUNG:  # "Namun, Himalaya adalah…" = "Himalaya adalah…"
+                awal.pop(0)
+            awal = tuple(awal[:6])
             mirip = max((len(kata & lama) / len(kata) for lama in sudah_kata), default=0) if kata else 0
             baru = len(kata - semua) / len(kata) if kata else 1
             if not (angka - sudah_angka) and ((angka and mirip >= 0.45) or (len(kata) >= 5 and mirip >= 0.8)
-                                              or (len(kata) >= 7 and baru <= 0.15)):
+                                              or (len(kata) >= 7 and baru <= 0.15)
+                                              or (len(awal) == 6 and awal in sudah_awal)):
                 continue
             simpan.append(k)
             sudah_angka |= angka
             sudah_kata.append(kata)
             semua |= kata
+            sudah_awal.add(awal)
         if simpan:
             hasil.append(" ".join(simpan))
     teks = "\n\n".join(hasil)
@@ -337,6 +350,96 @@ def buang_fakta_berulang(teks):
         teks = re.sub(r"(^|[.!?]\s+|\n)(?:Kedua|Ketiga|Keempat|Kelima|Terakhir)\s*,\s*(\w)",
                       lambda m: m.group(1) + m.group(2).upper(), teks)
     return teks
+
+
+_PEMBANDING = re.compile(r"\b(daripada|dibandingkan?|setara|kali lipat|seukuran|setinggi|sebesar|seberat|seluas|"
+                         r"secepat|sepanjang|lebih (cepat|lambat|besar|kecil|tinggi|rendah|panjang|berat|tua|dalam|"
+                         r"luas|banyak))\b", re.I)
+
+
+def _angka(teks):
+    """Angka tanpa pemisah ribuan/desimal: "1.600" dan "1,600" sama-sama "1600"."""
+    return {re.sub(r"[.,]", "", x) for x in re.findall(r"\d+(?:[.,]\d+)*", teks)}
+
+
+def _kutipan_sumber(kalimat, sumber):
+    """Dua kalimat sumber yang memuat angka yang sama (dan kata yang paling mirip) dengan kalimat naskah."""
+    angka = _angka(kalimat)
+    if not angka:
+        return []
+    kata = {w for w in re.findall(r"\w+", kalimat.lower()) if len(w) > 4}
+    skor = []
+    for s in sumber:
+        sama = angka & _angka(s)
+        if sama:
+            skor.append((len(sama) * 3 + len(kata & set(re.findall(r"\w+", s.lower()))), s))
+    return [s for _, s in sorted(skor, key=lambda x: -x[0])[:2]]
+
+
+def periksa_fakta(cfg, teks, riset, batal=None, log=print):
+    """Kalimat naskah yang memuat angka atau perbandingan dicek model teks terhadap kalimat sumber yang memuat angka
+    yang sama. Dulu sumber "began moving north at about 20 cm per year" (dulu) ditulis "bergerak 20 cm per tahun"
+    (sekarang), dan "10 mm per tahun" disebut lebih cepat daripada tumbuhnya kuku (kuku ±3 cm per tahun). Kalimat yang
+    salah diganti perbaikan dari model, atau dibuang. Mengembalikan (teks, {kalimat lama: kalimat baru atau ""})."""
+    sumber = [x.strip() for s in riset for x in re.split(r"(?<=[.!?])\s+|\n+", s.get("teks") or "") if len(x) > 20]
+    paragraf = [pecah_kalimat(p) for p in teks.split("\n\n")]
+    periksa = [(pi, ki) for pi, par in enumerate(paragraf) for ki, k in enumerate(par)
+               if re.search(r"\d", k) or _PEMBANDING.search(k)][:24]
+    ganti = {}
+    for mulai in range(0, len(periksa), 8):
+        if batal:
+            batal.cek()
+        kelompok = periksa[mulai:mulai + 8]
+        daftar = []
+        for n, (pi, ki) in enumerate(kelompok):
+            k = paragraf[pi][ki]
+            kutip = _kutipan_sumber(k, sumber)
+            daftar.append(f"{n + 1}) {k}\n   Kutipan sumber: "
+                          + (" | ".join(x[:300] for x in kutip) if kutip else "(tidak ada angka yang sama di sumber)"))
+        schema = {"type": "object", "properties": {"kalimat": {
+            "type": "array", "minItems": len(kelompok), "maxItems": len(kelompok), "items": {
+                "type": "object", "required": ["no", "alasan", "benar", "perbaikan"],
+                "properties": {"no": {"type": "integer"}, "alasan": {"type": "string"},
+                               "benar": {"type": "boolean"}, "perbaikan": {"type": "string"}}}}},
+            "required": ["kalimat"]}
+        pesan = [{"role": "user", "content": (
+            "Kamu pemeriksa fakta naskah video sains berbahasa Indonesia. Periksa tiap kalimat di bawah terhadap "
+            "kutipan sumbernya dan pengetahuan ilmiah yang sudah pasti.\n\n" + "\n".join(daftar) + "\n\n"
+            "Kalimat SALAH kalau:\n"
+            "- angka, satuan, atau acuannya berbeda dari kutipan sumber;\n"
+            "- keterangan waktunya berubah: kutipan menyebut keadaan dulu atau di awal (kata seperti began, initially, "
+            "was, were, once, used to, at that time, million years ago), tapi naskah menulisnya seolah berlaku "
+            "sekarang (\"sebenarnya bergerak …\", \"saat ini …\", tanpa kata dulu/awalnya);\n"
+            "- perbandingannya keliru: hitung kedua angka dalam satuan yang sama (misalnya rambut tumbuh ±1 cm per "
+            "bulan = ±12 cm per tahun), lalu cek arah \"lebih cepat/lebih besar\";\n"
+            "- klaimnya tidak ada di sumber dan tidak pasti benar.\n"
+            "Analogi tanpa angka (\"seperti karpet yang ditekuk\"), gaya bahasa, dan pertanyaan dianggap benar.\n"
+            "alasan: satu kalimat pendek, tulis hitungannya kalau ada perbandingan. perbaikan: kalau salah, kalimat "
+            "pengganti yang benar dengan gaya yang sama (angka hanya dari kutipan sumber); \"\" kalau benar atau kalau "
+            "kalimatnya lebih baik dibuang.")}]
+        try:
+            j = ollama.chat_json(cfg, pesan, schema, batal=batal, maks_token=90 * len(kelompok) + 80, suhu=0.1)
+        except (RuntimeError, ValueError) as e:
+            log(f"Pemeriksaan fakta dilewati ({e})")
+            continue
+        hasil = [x for x in j.get("kalimat", []) if isinstance(x, dict)]
+        salah = [x for x in hasil if x.get("benar") is False and 1 <= _int(x.get("no")) <= len(kelompok)]
+        if len(salah) > max(2, len(kelompok) * 0.6):  # hampir semua dianggap salah: pemeriksanya yang ngawur
+            log(f"Pemeriksaan fakta diabaikan: {len(salah)} dari {len(kelompok)} kalimat dianggap salah")
+            continue
+        for x in salah:
+            pi, ki = kelompok[_int(x["no"]) - 1]
+            lama = paragraf[pi][ki]
+            baru = " ".join(str(x.get("perbaikan") or "").split())
+            if baru == " ".join(lama.split()):  # "salah" tapi perbaikannya sama persis: tidak ada yang diubah
+                continue
+            if len(baru.split()) > 2 * len(lama.split()) + 5:
+                baru = ""
+            ganti[lama] = baru
+            paragraf[pi][ki] = baru
+            log(f"Fakta diperbaiki: «{lama}» → «{baru or '(dibuang)'}» ({str(x.get('alasan') or '')[:150]})")
+    teks = "\n\n".join(" ".join(k for k in par if k) for par in paragraf)
+    return "\n\n".join(p for p in teks.split("\n\n") if p.strip()), ganti
 
 
 def _fakta(riset):
@@ -375,7 +478,10 @@ def tulis(cfg, bahan, riset, durasi, batal=None, saat_token=None, log=print, gay
             f"{g['pendek'] if durasi <= 90 else g['panjang']}{_perintah_cta(cta)}")},
     ]
     teks = ollama.chat(cfg, pesan, suhu=0.8, batal=batal, saat_token=saat_token, maks_token=int(kata * 3 + 200))
-    return buang_fakta_berulang(bersihkan(teks)), []
+    teks = buang_fakta_berulang(bersihkan(teks))
+    if gaya in GAYA_FAKTA:
+        teks = periksa_fakta(cfg, teks, riset, batal, log)[0]
+    return teks, []
 
 
 SCHEMA_KERANGKA = {
@@ -552,13 +658,25 @@ def _tulis_panjang(cfg, bahan, riset, durasi, batal, saat_token, log, gaya="twis
             hasil[-1], teks = _buang_ulangan(hasil[-1], teks)
         if teks:
             hasil.append(teks)
-            bab.append({"judul": b["judul"].strip()[:60], "awal": " ".join(teks.split()[:8])})
+            bab.append({"judul": b["judul"].strip()[:60], "awal": " ".join(teks.split()[:8]),
+                        "kalimat": pecah_kalimat(teks)[:4]})
     naskah_jadi = buang_fakta_berulang("\n\n".join(hasil))
     if len(naskah_jadi.split()) < 0.95 * sum(len(h.split()) for h in hasil):
         log(f"Kalimat yang mengulang fakta dibuang: {sum(len(h.split()) for h in hasil)} → "
             f"{len(naskah_jadi.split())} kata")
-    # awal bab harus tetap ada di naskah (chapter YouTube dicari dari 8 kata pertamanya)
-    bab = [b for b in bab if b["awal"] in " ".join(naskah_jadi.split())]
+    ganti = {}
+    if gaya in GAYA_FAKTA:
+        naskah_jadi, ganti = periksa_fakta(cfg, naskah_jadi, riset, batal, log)
+    # awal bab harus tetap ada di naskah (chapter YouTube dicari dari 8 kata pertamanya): kalimat pembuka yang dibuang
+    # atau diperbaiki diganti kalimat bab itu berikutnya yang masih ada
+    rata = " ".join(naskah_jadi.split())
+    for b in bab:
+        for k in b.pop("kalimat"):
+            awal = " ".join(ganti.get(k, k).split()[:8])
+            if awal and awal in rata:
+                b["awal"] = awal
+                break
+    bab = [b for b in bab if b["awal"] in rata]
     return naskah_jadi, bab
 
 

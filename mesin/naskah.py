@@ -37,7 +37,7 @@ GAYA_NASKAH = {
         "aturan": """- Ikuti arahan dari TOPIK / CATATAN pembuat video, tetap dengan aturan di bawah.
 - Ini video FAKTA, bukan teori konspirasi atau opini. Semua isi harus benar menurut BAHAN FAKTA atau pengetahuan ilmiah yang sangat umum. Bedakan yang sudah pasti ("para ilmuwan menemukan", "hasil pengukuran menunjukkan") dari dugaan ilmiah ("para ilmuwan menduga", "kemungkinan besar"). Kalau ragu, jangan sebut angka.
 - HOOK = dua kalimat pertama, masing-masing maksimal 14 kata: fakta paling mengejutkan dari topik ini yang bisa langsung dibayangkan, lalu kontras "tapi…" yang memancing pertanyaan besar. Polanya seperti "Organisme terbesar di dunia bukan paus biru. Tapi sebuah hutan yang semua pohonnya berbagi satu akar." — tulis kalimatmu sendiri dari topik ini, jangan menyalin contoh. JANGAN membuka dengan pengantar, definisi, sapaan, "tahukah kamu", "jika kamu berdiri di…", atau latar sejarah.
-- Kalimat ketiga: janji yang baru terjawab di akhir video, dengan kata-katamu sendiri (polanya seperti "Dan alasannya mengubah cara kita memandang hutan.").
+- Kalimat ketiga: janji konkret tentang apa yang baru terungkap di akhir video (penyebabnya, buktinya, atau siapa yang menemukannya), dengan kata-katamu sendiri dari topik ini. JANGAN memakai kalimat jadi seperti "mengubah cara kita memandang…".
 - Lalu jelaskan kenapa itu aneh: bagaimana biasanya, lalu apa yang berbeda di sini ("Sungai besar biasanya berkelok dan berpindah. Tapi Nil tidak.").
 - Susun sebagai rangkaian pertanyaan yang dijawab satu per satu. Tiap jawaban membuka pertanyaan berikutnya, dan tiap paragraf diakhiri pancingan ke paragraf berikutnya ("Tapi itu belum yang paling aneh.", "Lalu dari mana tekanan sebesar itu?"). Urutkan dari yang mengejutkan ke yang PALING mengejutkan; jawaban hook disimpan untuk menjelang akhir.
 - Untuk konsep yang sulit, pakai analogi sehari-hari ("bayangkan selang taman yang dibiarkan menyala", "cara kerjanya mirip lampu lava raksasa") dan pembanding skala yang mudah dibayangkan ("seluas 32 ribu kolam renang olimpiade").
@@ -186,6 +186,16 @@ SCHEMA_INTI = {  # kolom datar + bukti bernomor (array membuat gemma mengulang t
     "required": ["pertanyaan", "teori", "konteks", "fakta_1", "artinya_1", "fakta_2", "artinya_2", "fakta_3",
                  "artinya_3", "versi_resmi", "kesimpulan", "hook"],
 }
+# Video fakta: jawaban ditulis SEBELUM pertanyaannya (model mengisi kolom JSON sesuai urutan). Kalau pertanyaan duluan,
+# model memilih pertanyaan yang tidak dijawab BAHAN FAKTA lalu mengisi jawaban lain: Mariana bertanya "bagaimana
+# makhluk hidup bisa bertahan?" dengan jawaban "lempeng tektonik menciptakan celah…", dan bagian penutup naskahnya jadi
+# "tekanan ekstrem tercipta karena pergerakan lempeng" (padahal tekanan berasal dari berat air di atasnya).
+# Pemeriksa model 12B untuk pasangan pertanyaan → jawaban sudah dicoba (2026-10-28) dan tidak dipakai: ditanya langsung
+# ia meloloskan pasangan yang salah; disuruh mengutip sumber, ia menggabungkan kalimat atau mengutip kalimat yang tidak
+# relevan, lalu "memperbaiki" inti Sahara yang benar jadi pertanyaan "apa saja wilayah Sahara?".
+_URUTAN_FAKTA = ["teori", "pertanyaan", *[k for k in SCHEMA_INTI["required"] if k not in ("teori", "pertanyaan")]]
+SCHEMA_INTI_FAKTA = {"type": "object", "properties": {k: SCHEMA_INTI["properties"][k] for k in _URUTAN_FAKTA},
+                     "required": _URUTAN_FAKTA}
 
 
 def inti_cerita(cfg, bahan, riset, batal=None, log=print, gaya="meyakinkan"):
@@ -195,17 +205,24 @@ def inti_cerita(cfg, bahan, riset, batal=None, log=print, gaya="meyakinkan"):
     (naskah tetap ditulis tanpa rencana)."""
     fakta = gaya in GAYA_FAKTA
     kolom = (
-        "- pertanyaan: satu pertanyaan besar yang dijawab video ini, yang bikin orang awam penasaran.\n"
-        "- teori: JAWABAN singkat para ilmuwan atas pertanyaan itu (apa penyebabnya / apa yang sebenarnya terjadi).\n"
+        "- teori: JAWABAN para ilmuwan yang TERTULIS di BAHAN FAKTA: penyebab atau cara kerja utama di balik topik "
+        "ini, dengan sebab dan akibatnya persis seperti di BAHAN FAKTA.\n"
+        "- pertanyaan: satu pertanyaan besar yang bikin orang awam penasaran DAN dijawab persis oleh kolom teori di "
+        "atas (yang ditanyakan = yang dijelaskan teori). Jangan menanyakan hal yang jawabannya tidak ada di BAHAN "
+        "FAKTA.\n"
         "- konteks: satu kalimat pengenalan untuk penonton yang belum tahu apa-apa (apa, di mana, seberapa besar).\n"
         "- fakta_1..3: fakta NYATA dari BAHAN FAKTA (dengan tahun, ukuran, jarak, atau angka) yang menjelaskan "
         "jawabannya, berurutan dari yang paling mudah dipahami ke yang paling mengejutkan.\n"
-        "- artinya_1..3: arti fakta itu bagi orang awam, sebaiknya dengan analogi sehari-hari atau pembanding skala.\n"
+        # Mariana: "panjang 2.550 km → setara jarak Jakarta–Singapura" (±880 km)
+        "- artinya_1..3: arti fakta itu bagi orang awam, sebaiknya dengan analogi sehari-hari. Pembanding skala hanya "
+        "kalau ukuran pembandingnya kamu tahu pasti dan sudah kamu hitung sama besar; jangan menebak jarak antarkota "
+        "atau ukuran benda.\n"
         "- versi_resmi: hal yang masih belum diketahui atau masih diteliti para ilmuwan (isi \"-\" kalau tidak ada).\n"
-        "- kesimpulan: kalimat penutup yang MENJAWAB pertanyaan besar sekaligus dampaknya yang bikin wow.\n"
+        "- kesimpulan: kalimat penutup yang MENJAWAB pertanyaan besar dengan jawaban di kolom teori, sekaligus "
+        "dampaknya yang bikin wow.\n"
         "- hook: DUA kalimat pembuka video (masing-masing maksimal 14 kata): fakta paling mengejutkan di atas yang "
         "bisa langsung dibayangkan (pakai angka atau perbandingan), lalu kontras \"Tapi…\" yang memancing pertanyaan "
-        "besar. Bukan pengantar, bukan definisi.\n"
+        "besar di atas. Bukan pengantar, bukan definisi.\n"
         "Semua harus fakta dari BAHAN FAKTA atau pengetahuan ilmiah yang sangat umum, tanpa teori konspirasi."
         if fakta else
         "- pertanyaan: satu pertanyaan besar yang dijawab video ini, yang bikin orang awam penasaran.\n"
@@ -228,7 +245,8 @@ def inti_cerita(cfg, bahan, riset, batal=None, log=print, gaya="meyakinkan"):
         f"Sebelum naskah video {'sains/fakta' if fakta else 'konspirasi/misteri'} ditulis, susun INTI CERITANYA dalam "
         f"bahasa Indonesia sehari-hari, satu kalimat per kolom:\n{kolom}")}]
     try:
-        j = ollama.chat_json(cfg, pesan, SCHEMA_INTI, batal=batal, maks_token=800, suhu=0.4)
+        j = ollama.chat_json(cfg, pesan, SCHEMA_INTI_FAKTA if fakta else SCHEMA_INTI, batal=batal, maks_token=800,
+                             suhu=0.4)
     except (RuntimeError, ValueError) as e:
         log(f"Inti cerita gagal disusun ({e}) — naskah ditulis langsung")
         return ""
@@ -312,6 +330,11 @@ def _buang_ulangan(sebelumnya, teks):
 
 _PENYAMBUNG = {"namun", "tapi", "tetapi", "dan", "bahkan", "lalu", "kemudian", "jadi", "nah", "sementara", "padahal",
                "ternyata", "faktanya", "sebenarnya"}
+# Penyambung yang menunjuk kalimat persis sebelumnya. Kalau kalimat itu dibuang, penyambungnya ikut dibuang: naskah
+# Mariana membuka paragraf dengan "Akibatnya, Lempeng Pasifik terdorong…" setelah kalimat sebabnya terbuang.
+_SAMBUNG_AKIBAT = re.compile(r"^(?:akibatnya|alhasil|karena itu|oleh karena itu|oleh sebab itu|dengan begitu|"
+                             r"dengan demikian|sebagai akibatnya|makanya|itulah sebabnya|itulah kenapa|maka)\b\s*,?\s*",
+                             re.I)
 
 
 def buang_fakta_berulang(teks):
@@ -323,9 +346,16 @@ def buang_fakta_berulang(teks):
     angka baru yang 6 kata pertamanya sama dengan kalimat terdahulu: "Himalaya adalah barisan pegunungan raksasa di
     Asia yang…" pernah membuka dua bagian berturut-turut."""
     sudah_angka, sudah_kata, semua, sudah_awal, hasil = set(), [], set(), set(), []
+    dibuang = False  # kalimat persis sebelumnya dibuang
     for par in teks.split("\n\n"):
         simpan = []
         for k in pecah_kalimat(par):
+            if dibuang and _SAMBUNG_AKIBAT.match(k):
+                k = _SAMBUNG_AKIBAT.sub("", k, count=1)
+                k = k[:1].upper() + k[1:]
+            dibuang = True
+            if not re.search(r"\w", k):
+                continue
             angka = set(re.findall(r"\d+(?:[.,]\d+)*", k))
             kata = {w for w in re.findall(r"\w+", k.lower()) if len(w) > 3}
             awal = re.findall(r"\w+", k.lower())
@@ -338,6 +368,7 @@ def buang_fakta_berulang(teks):
                                               or (len(kata) >= 7 and baru <= 0.15)
                                               or (len(awal) == 6 and awal in sudah_awal)):
                 continue
+            dibuang = False
             simpan.append(k)
             sudah_angka |= angka
             sudah_kata.append(kata)
@@ -670,7 +701,8 @@ BAGIAN_PANJANG = {  # instruksi bagian pertama/terakhir kerangka & naskah panjan
         "porsi_awal": 0.55,
         "terakhir": ("Ini bagian TERAKHIR: JANGAN merangkum dan JANGAN mengulang fakta atau angka yang sudah disebut. "
                      "Ungkap jawaban yang menjawab hook di awal video, satu kalimat dampaknya yang bikin wow (boleh "
-                     "sedikit jenaka), lalu satu pertanyaan ke penonton."),
+                     "sedikit jenaka), lalu satu pertanyaan ke penonton. Jawabannya diambil dari INTI CERITA atau "
+                     "BAHAN FAKTA; jangan membuat sebab-akibat baru demi menyambungkan hook."),
     },
     "meyakinkan": {
         "kerangka_awal": "berupa hal yang pernah didengar penonton lalu dibelokkan, plus jawaban untuk skeptisnya penonton ",

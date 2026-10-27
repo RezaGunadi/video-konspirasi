@@ -270,6 +270,13 @@ def ulangi(pid, opsi_baru=None):
     return _hentikan_lalu(pid, f)
 
 
+def _rencana_diterima(p):
+    """Pengguna sudah mengedit shot: rencana yang ada dianggap versi terbaru supaya tidak disusun ulang otomatis."""
+    for a in p["adegan"]:
+        if a.get("shots"):
+            a["rencana_versi"] = RENCANA_VERSI
+
+
 def pilih_footage(pid, ia, js, index=None, file_lokal=None):
     """Ganti footage satu shot: index kandidat tertentu, berikutnya (None), atau file upload sendiri."""
     def f(p):
@@ -299,6 +306,7 @@ def pilih_footage(pid, ia, js, index=None, file_lokal=None):
             s["bagian"] = _bagian_bebas(p, kand[s["pilih"]], kecuali=s)  # potongan yang belum tampil di shot lain
         s["bahan"] = None
         s.pop("gagal", None)
+        _rencana_diterima(p)
         _buang_langkah(p, "footage", "render")
         log(p, f"Footage adegan {ia + 1} shot {js + 1} diganti")
     return _hentikan_lalu(pid, f, antri=False)
@@ -310,6 +318,7 @@ def hapus_stiker(pid, ia, js):
         s = p["adegan"][ia]["shots"][js]
         s["stiker"] = None
         s.pop("stiker_bahan", None)
+        _rencana_diterima(p)
         _buang_langkah(p, "render")
         log(p, f"Stiker adegan {ia + 1} shot {js + 1} dihapus")
     return _hentikan_lalu(pid, f, antri=False)
@@ -889,6 +898,11 @@ def _kueri_latar(p, i):
     return hasil
 
 
+# Naikkan setiap kali logika rencana shot berubah: adegan yang direncanakan versi lama disusun ulang saat langkah
+# footage jalan lagi (misalnya mini PC direstart di tengah footage), kandidatnya tetap.
+RENCANA_VERSI = 2
+
+
 def _rencana_lemah(a):
     """Rencana adegan yang masih kosong, tanpa klip, mengulang satu foto berkali-kali (peta Guam 5x @2 detik), atau
     satu take panjang karena klipnya cuma satu (stasiun bawah laut 14 detik)."""
@@ -901,6 +915,7 @@ def _rencana_lemah(a):
 def _rencanakan(p, a, i, cfg, frames_adegan):
     """Rencana shot tata "video + stiker". Kalau klip yang nyambung sudah habis dipakai adegan lain, dicari klip
     tempat yang belum tampil dulu; kandidat yang dinilai tidak nyambung baru dipakai kalau itu pun gagal."""
+    a["rencana_versi"] = RENCANA_VERSI
     a["shots"] = _rencana_video(p, a, i, frames_adegan)
     if not p["opsi"]["cek_gambar"] or not _rencana_lemah(a):
         return
@@ -1230,7 +1245,8 @@ def l_footage(p, cfg, batal):
         if a.get("banding") and not a["banding"].get("siap"):
             _siapkan_banding(p, a, cfg, batal, judul_video)
         frames_adegan = int(round(a["durasi"] * render.FPS))
-        if video and (not a.get("shots") or sum(s["frames"] for s in a["shots"]) != frames_adegan):
+        if video and (not a.get("shots") or sum(s["frames"] for s in a["shots"]) != frames_adegan
+                      or a.get("rencana_versi") != RENCANA_VERSI):
             _rencanakan(p, a, i, cfg, frames_adegan)
             jenis = [a["kandidat"][s["pilih"]]["jenis"] if s.get("pilih") is not None else "🆚" if s.get("banding")
                      else "-" for s in a["shots"]]

@@ -355,6 +355,22 @@ def buang_fakta_berulang(teks):
 _PEMBANDING = re.compile(r"\b(daripada|dibandingkan?|setara|kali lipat|seukuran|setinggi|sebesar|seberat|seluas|"
                          r"secepat|sepanjang|lebih (cepat|lambat|besar|kecil|tinggi|rendah|panjang|berat|tua|dalam|"
                          r"luas|banyak))\b", re.I)
+# perbandingan DENGAN sesuatu ("lebih cepat daripada kuku", "setara 1.600 gajah") — "tumbuh lebih tinggi" saja bukan
+_BANDING_OBJEK = re.compile(r"\b(daripada|dibandingkan?|setara|kali lipat|seukuran|setinggi|sebesar|seberat|seluas|"
+                            r"secepat|sepanjang)\b", re.I)
+# kata yang wajar muncul di perbaikan walau tidak ada di naskah/sumber (arah perbandingan, keterangan waktu)
+_KATA_PERBAIKAN = {"lambat", "cepat", "kecil", "besar", "rendah", "tinggi", "pendek", "panjang", "ringan", "berat",
+                   "muda", "sedikit", "banyak", "awalnya", "dahulu", "mula-mula", "sekitar", "hampir", "kurang",
+                   "lebih", "kira-kira", "semula", "sekarang"}
+
+
+_SATUAN = {"cm": "cm", "sentimeter": "cm", "centimeter": "cm", "centimetre": "cm", "centimetres": "cm",
+           "mm": "mm", "milimeter": "mm", "millimetre": "mm", "km": "km", "kilometer": "km", "kilometre": "km",
+           "kilometres": "km", "m": "m", "meter": "m", "metre": "m", "metres": "m", "juta": "juta", "million": "juta",
+           "mya": "juta", "ma": "juta", "miliar": "miliar", "billion": "miliar", "ribu": "ribu", "thousand": "ribu",
+           "persen": "%", "percent": "%", "%": "%", "derajat": "derajat", "degrees": "derajat", "ton": "ton",
+           "tons": "ton", "tonnes": "ton", "kg": "kg", "kilogram": "kg", "tahun": "tahun", "year": "tahun",
+           "years": "tahun", "bar": "bar"}
 
 
 def _angka(teks):
@@ -362,30 +378,75 @@ def _angka(teks):
     return {re.sub(r"[.,]", "", x) for x in re.findall(r"\d+(?:[.,]\d+)*", teks)}
 
 
+def _angka_satuan(teks):
+    """Pasangan (angka, satuan): "20 cm" ↔ "20 cm (7.9 in)", "25 juta tahun" ↔ "~25 Mya" — supaya "20" tidak
+    tertukar dengan "20th century"."""
+    return {(re.sub(r"[.,]", "", a), _SATUAN.get(s.lower())) for a, s in
+            re.findall(r"(\d+(?:[.,]\d+)*)\s*(%|[A-Za-z]+)?", teks) if _SATUAN.get((s or "").lower())}
+
+
 def _kutipan_sumber(kalimat, sumber):
-    """Dua kalimat sumber yang memuat angka yang sama (dan kata yang paling mirip) dengan kalimat naskah."""
-    angka = _angka(kalimat)
-    if not angka:
-        return []
+    """Dua kalimat sumber yang memuat angka yang sama (satuan yang sama didahulukan) dengan kalimat naskah. Tanpa
+    angka yang sama (angka ditulis dengan huruf: "sembilan juta kilometer persegi"), kalimat sumber dengan kata yang
+    paling banyak sama — dulu kutipannya kosong dan luas Sahara yang benar dibuang karena "tidak ada di sumber"."""
+    angka, pasangan = _angka(kalimat), _angka_satuan(kalimat)
     kata = {w for w in re.findall(r"\w+", kalimat.lower()) if len(w) > 4}
-    skor = []
+    skor, cadangan = [], []
     for s in sumber:
+        mirip = len(kata & set(re.findall(r"\w+", s.lower())))
         sama = angka & _angka(s)
         if sama:
-            skor.append((len(sama) * 3 + len(kata & set(re.findall(r"\w+", s.lower()))), s))
-    return [s for _, s in sorted(skor, key=lambda x: -x[0])[:2]]
+            skor.append((len(sama) * 3 + len(pasangan & _angka_satuan(s)) * 3 + mirip, s))
+        elif mirip >= 2:
+            cadangan.append((mirip, s))
+    return [s for _, s in sorted(skor or cadangan, key=lambda x: -x[0])[:2]]
+
+
+_DULU_SUMBER = re.compile(r"\b(began|begun|initially|originally|used to|at that time|formerly|at first|"
+                          r"in the past|mula-mula|awalnya|dahulu)\b", re.I)
+_DULU_NASKAH = re.compile(r"\b(dulu|dahulu|awalnya|mulanya|semula|mulai|pernah|sempat|saat itu|kala itu|ketika itu|"
+                          r"yang lalu|silam|sebelum|pada awalnya)\b", re.I)
+
+
+def _catatan_waktu(kalimat, kutipan):
+    """Petunjuk pasti untuk pemeriksa: kutipan yang memuat angka+satuan yang sama memakai keterangan masa lalu/awal,
+    kalimat naskah tidak. Tanpa petunjuk ini model kadang menangkap "bergerak 20 cm per tahun" (sumber: began
+    moving), kadang tidak."""
+    if _DULU_NASKAH.search(kalimat):
+        return ""
+    pasangan = _angka_satuan(kalimat)
+    for s in kutipan:
+        m = _DULU_SUMBER.search(s)
+        if m and pasangan & _angka_satuan(s):
+            return (f"\n   Catatan: kutipan memakai keterangan masa lalu/awal (\"{m.group(0)}\"), kalimat naskah "
+                    "menulisnya seolah berlaku sekarang.")
+    return ""
 
 
 def periksa_fakta(cfg, teks, riset, batal=None, log=print):
     """Kalimat naskah yang memuat angka atau perbandingan dicek model teks terhadap kalimat sumber yang memuat angka
     yang sama. Dulu sumber "began moving north at about 20 cm per year" (dulu) ditulis "bergerak 20 cm per tahun"
     (sekarang), dan "10 mm per tahun" disebut lebih cepat daripada tumbuhnya kuku (kuku ±3 cm per tahun). Kalimat yang
-    salah diganti perbaikan dari model, atau dibuang. Mengembalikan (teks, {kalimat lama: kalimat baru atau ""})."""
+    salah diganti perbaikan dari model, atau dibuang — setelah usulannya lolos pemeriksa kedua (_uji_usulan).
+    Mengembalikan (teks, {kalimat lama: kalimat baru atau ""})."""
     sumber = [x.strip() for s in riset for x in re.split(r"(?<=[.!?])\s+|\n+", s.get("teks") or "") if len(x) > 20]
     paragraf = [pecah_kalimat(p) for p in teks.split("\n\n")]
     periksa = [(pi, ki) for pi, par in enumerate(paragraf) for ki, k in enumerate(par)
-               if re.search(r"\d", k) or _PEMBANDING.search(k)][:24]
-    ganti = {}
+               if (re.search(r"\d", k) or _BANDING_OBJEK.search(k)) and not k.rstrip().endswith("?")][:24]
+    ganti, usulan = {}, []
+    dikenal = _KATA_PERBAIKAN | set(re.findall(r"[\w-]+", (teks + " " + " ".join(s.get("teks") or "" for s in riset))
+                                               .lower()))
+    # Keterangan waktu yang hilang dideteksi kode (model 12B menangkapnya kadang-kadang saja, walau sudah diberi
+    # catatan); model hanya menulis ulang kalimatnya.
+    waktu = [(pi, ki) for pi, ki in periksa
+             if _catatan_waktu(paragraf[pi][ki], _kutipan_sumber(paragraf[pi][ki], sumber))]
+    if waktu:
+        for (pi, ki), baru in zip(waktu, _tulis_ulang_waktu(cfg, [paragraf[pi][ki] for pi, ki in waktu], batal,
+                                                            dikenal)):
+            lama = paragraf[pi][ki]
+            ganti[lama] = paragraf[pi][ki] = baru
+            log(f"Keterangan waktu diperbaiki: «{lama}» → «{baru or '(dibuang)'}»")
+        periksa = [x for x in periksa if x not in waktu]
     for mulai in range(0, len(periksa), 8):
         if batal:
             batal.cek()
@@ -395,7 +456,8 @@ def periksa_fakta(cfg, teks, riset, batal=None, log=print):
             k = paragraf[pi][ki]
             kutip = _kutipan_sumber(k, sumber)
             daftar.append(f"{n + 1}) {k}\n   Kutipan sumber: "
-                          + (" | ".join(x[:300] for x in kutip) if kutip else "(tidak ada angka yang sama di sumber)"))
+                          + (" | ".join(x[:300] for x in kutip) if kutip else "(tidak ada angka yang sama di sumber)")
+                          + _catatan_waktu(k, kutip))
         schema = {"type": "object", "properties": {"kalimat": {
             "type": "array", "minItems": len(kelompok), "maxItems": len(kelompok), "items": {
                 "type": "object", "required": ["no", "alasan", "benar", "perbaikan"],
@@ -412,7 +474,9 @@ def periksa_fakta(cfg, teks, riset, batal=None, log=print):
             "sekarang (\"sebenarnya bergerak …\", \"saat ini …\", tanpa kata dulu/awalnya);\n"
             "- perbandingannya keliru: hitung kedua angka dalam satuan yang sama (misalnya rambut tumbuh ±1 cm per "
             "bulan = ±12 cm per tahun), lalu cek arah \"lebih cepat/lebih besar\";\n"
-            "- klaimnya tidak ada di sumber dan tidak pasti benar.\n"
+            "- klaimnya tidak ada di sumber DAN menurut pengetahuan ilmiah yang sudah pasti memang keliru atau "
+            "meragukan. Kalimat yang tidak ada di kutipan tapi benar menurut pengetahuan umum (misalnya luas atau "
+            "tinggi yang terkenal) tetap benar.\n"
             "Analogi tanpa angka (\"seperti karpet yang ditekuk\"), gaya bahasa, dan pertanyaan dianggap benar.\n"
             "alasan: satu kalimat pendek, tulis hitungannya kalau ada perbandingan. perbaikan: kalau salah, kalimat "
             "pengganti yang benar dengan gaya yang sama (angka hanya dari kutipan sumber); \"\" kalau benar atau kalau "
@@ -427,7 +491,11 @@ def periksa_fakta(cfg, teks, riset, batal=None, log=print):
         if len(salah) > max(2, len(kelompok) * 0.6):  # hampir semua dianggap salah: pemeriksanya yang ngawur
             log(f"Pemeriksaan fakta diabaikan: {len(salah)} dari {len(kelompok)} kalimat dianggap salah")
             continue
+        sudah = set()
         for x in salah:
+            if _int(x["no"]) in sudah:  # nomor ganda dari model: dulu satu kalimat diubah 25 → 55 → 25 juta
+                continue
+            sudah.add(_int(x["no"]))
             pi, ki = kelompok[_int(x["no"]) - 1]
             lama = paragraf[pi][ki]
             baru = " ".join(str(x.get("perbaikan") or "").split())
@@ -435,11 +503,82 @@ def periksa_fakta(cfg, teks, riset, batal=None, log=print):
                 continue
             if len(baru.split()) > 2 * len(lama.split()) + 5:
                 baru = ""
-            ganti[lama] = baru
-            paragraf[pi][ki] = baru
-            log(f"Fakta diperbaiki: «{lama}» → «{baru or '(dibuang)'}» ({str(x.get('alasan') or '')[:150]})")
+            if baru and _BANDING_OBJEK.search(lama) and _angka(baru) == _angka(lama) and _pembanding(baru) == \
+                    _pembanding(lama):
+                # dinilai salah tapi "perbaikannya" tetap "lebih cepat daripada kuku": kalimatnya dibuang saja
+                baru = ""
+            asing = [w for w in re.findall(r"[\w-]+", baru.lower()) if len(w) >= 5 and w not in dikenal]
+            if asing:  # perbaikan berisi kata rusak ("tabisasi"): perbandingan yang salah dibuang, lainnya dibiarkan
+                log(f"Usulan perbaikan berisi kata asing {asing}: «{baru}»")
+                if not _BANDING_OBJEK.search(lama):
+                    continue
+                baru = ""
+            usulan.append({"letak": (pi, ki), "lama": lama, "baru": baru, "alasan": str(x.get("alasan") or ""),
+                           "kutipan": _kutipan_sumber(lama, sumber)})
+    for u, ok in zip(usulan, _uji_usulan(cfg, usulan, batal, log)):
+        if not ok:
+            log(f"Usulan perbaikan ditolak pemeriksa kedua: «{u['lama']}» → «{u['baru'] or '(dibuang)'}»")
+            continue
+        pi, ki = u["letak"]
+        ganti[u["lama"]] = u["baru"]
+        paragraf[pi][ki] = u["baru"]
+        log(f"Fakta diperbaiki: «{u['lama']}» → «{u['baru'] or '(dibuang)'}» ({u['alasan'][:150]})")
     teks = "\n\n".join(" ".join(k for k in par if k) for par in paragraf)
     return "\n\n".join(p for p in teks.split("\n\n") if p.strip()), ganti
+
+
+def _pembanding(teks):
+    return {m.group(0).lower() for m in _PEMBANDING.finditer(teks)}
+
+
+def _tulis_ulang_waktu(cfg, kalimat, batal, dikenal):
+    """Kalimat yang angkanya menurut sumber berlaku dulu/di awal ditulis ulang supaya jelas waktunya. Hasil yang
+    tidak memuat keterangan masa lalu, mengubah angkanya, atau berisi kata rusak ditolak, kalimatnya dibuang ("")."""
+    props = {f"kalimat_{n + 1}": {"type": "string"} for n in range(len(kalimat))}
+    pesan = [{"role": "user", "content": (
+        "Kalimat naskah video berikut menyebut angka yang menurut sumbernya berlaku DULU atau DI AWAL, tapi ditulis "
+        "seolah berlaku sekarang:\n\n" + "\n".join(f"{n + 1}) {k}" for n, k in enumerate(kalimat)) + "\n\n"
+        "Tulis ulang tiap kalimat dalam bahasa Indonesia dengan gaya yang sama supaya jelas angkanya berlaku dulu "
+        "atau di awal (pakai kata seperti dulu, awalnya, mula-mula, saat itu). Angkanya jangan diubah.")}]
+    try:
+        j = ollama.chat_json(cfg, pesan, {"type": "object", "properties": props, "required": list(props)},
+                             batal=batal, maks_token=60 * len(kalimat) + 40, suhu=0.2)
+    except (RuntimeError, ValueError):
+        j = {}
+    hasil = []
+    for n, k in enumerate(kalimat):
+        baru = " ".join(str(j.get(f"kalimat_{n + 1}") or "").split())
+        ok = baru and _DULU_NASKAH.search(baru) and _angka(k) <= _angka(baru) \
+            and len(baru.split()) <= 2 * len(k.split()) + 5 \
+            and all(w in dikenal for w in re.findall(r"[\w-]+", baru.lower()) if len(w) >= 5)
+        hasil.append(baru if ok else "")
+    return hasil
+
+
+def _uji_usulan(cfg, usulan, batal, log):
+    """Pemeriksa kedua: tiap usulan perbaikan dibandingkan dengan kalimat aslinya terhadap kutipan sumber yang sama.
+    Pemeriksa pertama pernah "membetulkan" tabrakan keras 25 juta tahun lalu (benar menurut sumber) jadi 55 juta, dan
+    20 cm/tahun jadi "0 hingga 10 cm" dari kalimat sumber lain. Mengembalikan list bool (True = usulan dipakai)."""
+    if not usulan:
+        return []
+    daftar = "\n".join(
+        f"{n + 1}) ASLI: {u['lama']}\n   USULAN: {u['baru'] or '(kalimat dibuang)'}\n   Kutipan sumber: "
+        + (" | ".join(x[:300] for x in u["kutipan"]) or "(tidak ada)") + _catatan_waktu(u["lama"], u["kutipan"])
+        for n, u in enumerate(usulan))
+    props = {f"usulan_{n + 1}": {"type": "boolean"} for n in range(len(usulan))}
+    pesan = [{"role": "user", "content": (
+        "Untuk tiap nomor, bandingkan kalimat ASLI dan USULAN dengan kutipan sumbernya dan pengetahuan ilmiah yang "
+        "sudah pasti.\n\n" + daftar + "\n\n"
+        "usulan_N = true hanya kalau USULAN lebih sesuai dengan kutipan sumber daripada ASLI (angka, satuan, keterangan "
+        "waktu dulu/sekarang, arah perbandingan). false kalau ASLI sudah sesuai sumber, kalau USULAN mengambil angka "
+        "dari kalimat sumber yang membahas hal lain, atau kalau USULAN merusak kalimatnya.")}]
+    try:
+        j = ollama.chat_json(cfg, pesan, {"type": "object", "properties": props, "required": list(props)},
+                             batal=batal, maks_token=12 * len(usulan) + 30, suhu=0.1)
+    except (RuntimeError, ValueError) as e:
+        log(f"Pemeriksa kedua gagal ({e}) — naskah tidak diubah")
+        return [False] * len(usulan)
+    return [j.get(f"usulan_{n + 1}") is True for n in range(len(usulan))]
 
 
 def _fakta(riset):

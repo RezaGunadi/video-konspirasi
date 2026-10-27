@@ -23,8 +23,8 @@ from urllib.parse import unquote, urlencode
 import requests
 
 from . import ollama, potong
-from .alat import (CACHE, Dibatalkan, baca_json, ffmpeg, font_ffmpeg, hash_pendek, http_get, peramban, probe,
-                   tulis_json, unduh)
+from .alat import (CACHE, FFMPEG, NO_WINDOW, Dibatalkan, baca_json, ffmpeg, font_ffmpeg, hash_pendek, http_get,
+                   peramban, probe, tulis_json, unduh)
 
 F_CARI = CACHE / "cari"
 F_ASET = CACHE / "aset"
@@ -1431,8 +1431,24 @@ def _archive_file(ia_id):
     return f"https://archive.org/download/{ia_id}/{f['name']}", panjang
 
 
+def detik_hitam(f, mulai=0.0, durasi=None):
+    """Lama layar hitam pekat (fade ke hitam, jeda kosong di vlog) di potongan file video. Ambangnya ketat (hampir
+    hitam murni di 99,5% layar ≥0,4 detik) supaya footage laut dalam yang memang gelap tidak ikut terhitung."""
+    arg = [FFMPEG, "-hide_banner", "-nostats", "-ss", f"{mulai:.2f}", "-i", str(f)]
+    if durasi:
+        arg += ["-t", f"{durasi:.2f}"]
+    try:
+        r = subprocess.run(arg + ["-an", "-vf", "blackdetect=d=0.4:pic_th=0.995:pix_th=0.05", "-f", "null", "-"],
+                           capture_output=True, timeout=120, creationflags=NO_WINDOW)
+    except (OSError, subprocess.TimeoutExpired):
+        return 0.0
+    return sum(float(d) for d in re.findall(r"black_duration:([\d.]+)", r.stderr.decode("utf-8", "replace")))
+
+
 def siapkan(k, durasi, batal=None, bagian=0):
     """Bahan lokal untuk satu shot: {file, jenis, mulai}. None kalau gagal.
+    Potongan yang memuat layar hitam (vlog Madeira yang fade ke hitam pernah jadi latar 1 detik hitam di video
+    Komodo) diganti potongan lain dari klip yang sama, atau ditolak kalau semuanya hitam.
     bagian = potongan ke berapa dari video yang sama (tata visual "video + stiker" memakai satu klip panjang untuk
     beberapa shot, masing-masing bagian yang berbeda)."""
     kunci = hash_pendek(k["id"])
@@ -1463,6 +1479,12 @@ def siapkan(k, durasi, batal=None, bagian=0):
         mulai = (int(kunci, 16) % 1000) / 1000 * min(sisa, 6)  # sedikit acak supaya tidak selalu detik 0
         if bagian:
             mulai = (mulai + bagian * (durasi + 0.6)) % (sisa + 0.01)
+        for _ in range(4):
+            if detik_hitam(f, mulai, durasi) < 0.4:
+                break
+            mulai = (mulai + durasi + 0.6) % (sisa + 0.01)
+        else:
+            return None
         return {"file": str(f), "jenis": "video", "mulai": round(mulai, 2), "lebar": info["lebar"],
                 "tinggi": info["tinggi"], "durasi_file": info["durasi"]}
 
@@ -1521,7 +1543,7 @@ def siapkan(k, durasi, batal=None, bagian=0):
             tujuan.unlink(missing_ok=True)
             return None
     info = probe(tujuan)
-    if not info["video"] or info["durasi"] < 0.5:
+    if not info["video"] or info["durasi"] < 0.5 or detik_hitam(tujuan) >= 0.4:
         tujuan.unlink(missing_ok=True)
         return None
     return {"file": str(tujuan), "jenis": "video", "mulai": 0, "lebar": info["lebar"], "tinggi": info["tinggi"],

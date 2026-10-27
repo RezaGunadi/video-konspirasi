@@ -78,6 +78,18 @@ _UMUM_LATAR = {"aerial", "view", "views", "drone", "close", "closeup", "up", "ti
                "video", "shot", "slow", "motion", "background", "scene", "landscape", "beautiful", "over", "into",
                "animation", "animated", "digital", "abstract", "simulation", "render", "cgi", "graphic", "graphics",
                "3d", "4k", "hd", "loop", "cinematic", "clip", "stock", "moving", "flying", "camera"}
+# Klip cuaca/bencana (citra satelit badai, banjir, kebakaran) hanya jadi latar kalau kuerinya memang meminta itu:
+# "tropical island coast" pernah mendapat "Ernesto Brings Dangerous Seas to North America's Atlantic Coast" (Hurricane
+# Ernesto) untuk narasi evolusi komodo.
+PERISTIWA = re.compile(r"hurricanes?|cyclones?|typhoons?|\bstorms?\b|tornado(es)?|\bfloods?\b|flooding|tsunami|"
+                       r"earthquakes?|wildfires?|\bfires?\b|disasters?|drought|landslides?|avalanches?|blizzard|"
+                       r"\bwar\b|explosion|crash", re.I)
+# Kata sifat di kueri latar: ikut menjelaskan tempatnya, tapi judul klip yang hanya cocok di kata sifat ("Tropical
+# Cyclone", "Deep Purple") belum tentu tempat itu.
+_SIFAT_LATAR = {"tropical", "ancient", "deep", "deepest", "dark", "green", "snowy", "rocky", "frozen", "arid", "hot",
+                "cold", "icy", "sandy", "foggy", "misty", "volcanic", "rainy", "dry", "wet", "wild", "giant", "huge",
+                "vast", "massive", "remote", "small", "large", "big", "old", "dense", "barren", "lush", "blue", "red",
+                "white", "black", "golden", "tall", "high", "low", "wide", "beautiful", "stormy", "calm"}
 
 
 def _kata(teks):
@@ -117,9 +129,13 @@ def cocok_judul(k, kueri):
     """Judul klip menyebut tempat yang dicari ("Underwater view of a coral reef" untuk "deep sea underwater"). Klip
     latar yang TIDAK dinilai AI hanya dipakai kalau cocok begini. Hanya judulnya, kata utuh: dulu keterangan panjang
     ikut dicocokkan per potongan kata, jadi "desert sand dunes" mendapat akrobat di pantai ("…on the sand near the
-    seashore"), pulau pasir ("Sandbar island"), dan festival "Halloween Weekend 2016"."""
+    seashore"), pulau pasir ("Sandbar island"), dan festival "Halloween Weekend 2016". Kata sifat saja tidak cukup:
+    "tropical island beach" pernah mendapat "Tropical Cyclone Freddy" (citra satelit badai)."""
     kata = [w for w in _kata(kueri) if w not in _UMUM_LATAR and len(w) >= 3]
+    kata = [w for w in kata if w not in _SIFAT_LATAR] or kata
     judul = _kata(k.get("judul") or k.get("teks") or "")
+    if PERISTIWA.search(f"{k.get('judul') or ''} {k.get('teks') or ''}") and not PERISTIWA.search(kueri):
+        return False
     return any(_kata_sama(w, x) for w in kata for x in judul)
 
 

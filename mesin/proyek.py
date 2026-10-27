@@ -498,6 +498,11 @@ def l_naskah(p, cfg, batal):
         p["naskah"], p["bab"] = naskah.teaser(cfg, p["sumber_teks"], p.get("sudut") or "bagian paling mengejutkan",
                                               p["opsi"]["durasi"], batal, saat_token, cta=p["opsi"]["cta"],
                                               gaya=p["opsi"]["gaya_naskah"]), []
+        with _lock:
+            riset_induk = (_proyek.get(p.get("induk") or "") or {}).get("riset") or []
+        if p["opsi"]["gaya_naskah"] in naskah.GAYA_FAKTA and riset_induk:
+            # reels boleh menambah pembanding sendiri ("sebesar mobil kecil"): dicek terhadap riset video panjangnya
+            p["naskah"] = naskah.periksa_fakta(cfg, p["naskah"], riset_induk, batal, log=lambda t: log(p, t))[0]
     elif ringkas:
         p["naskah"], p["bab"] = naskah.ringkas_shorts(cfg, p["sumber_teks"], batal, saat_token,
                                                       gaya=p["opsi"]["gaya_naskah"], cta=p["opsi"]["cta"]), []
@@ -921,7 +926,7 @@ def _kueri_latar(p, i):
 
 # Naikkan setiap kali logika rencana shot berubah: adegan yang direncanakan versi lama disusun ulang saat langkah
 # footage jalan lagi (misalnya mini PC direstart di tengah footage), kandidatnya tetap.
-RENCANA_VERSI = 4
+RENCANA_VERSI = 5
 
 
 def _rencana_lemah(a):

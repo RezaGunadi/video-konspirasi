@@ -203,20 +203,16 @@ def _hentikan_lalu(pid, fungsi, antri=True):
         if not p:
             raise KeyError(pid)
         tadinya_jalan = p["status"] in ("jalan", "antri")
-        sedang_jalan = p["status"] == "jalan"
-        if sedang_jalan and pid in _batal:
-            _batal[pid].set()
-    for _ in range(50):
-        with _lock:
-            if p["status"] != "jalan":
-                break
-        time.sleep(0.1)
-    with _lock:
         if p["status"] == "jalan":
+            # Selalu diterapkan oleh kerjakan() sendiri begitu langkahnya berhenti, SEBELUM pekerja mengambil proyek
+            # berikutnya. Dulu perubahan diterapkan dari luar setelah menunggu: di sela itu pekerja sudah mengambil
+            # proyek lain (naskah Krakatau yang diedit jadi menunggu video Lubang hitam selesai).
             _tertunda.setdefault(pid, []).append((fungsi, antri))
+            if pid in _batal:
+                _batal[pid].set()
             p["pesan"] = "Menghentikan proses… perubahan diterapkan begitu langkah ini berhenti"
             return p
-        _terapkan(p, fungsi, antri, tadinya_jalan, duluan=sedang_jalan)
+        _terapkan(p, fungsi, antri, tadinya_jalan)
     _simpan(p, paksa=True)
     _bangun.set()
     return p
@@ -2049,7 +2045,7 @@ def _pekerja():
             # Urut waktu MASUK antrean (bukan waktu dibuat): video lama yang dicari ulang footage-nya tidak
             # menyerobot reels yang sudah menunggu.
             antri = sorted((p for p in _proyek.values() if p["status"] == "antri"),
-                           key=lambda p: p.get("antri_sejak") or p["dibuat"])
+                           key=lambda p: (p.get("antri_sejak") or p["dibuat"], p["dibuat"]))
         if antri:
             kerjakan(antri[0])
             continue

@@ -794,8 +794,47 @@ def periksa_fakta(cfg, teks, riset, batal=None, log=print):
         ganti[u["lama"]] = u["baru"]
         paragraf[pi][ki] = u["baru"]
         log(f"Fakta diperbaiki: «{u['lama']}» → «{u['baru'] or '(dibuang)'}» ({u['alasan'][:150]})")
+    # Kalimat yang merujuk kalimat sebelumnya ("Artinya, …", "Angka ini …") ikut dibuang kalau kalimat yang dirujuknya
+    # dibuang: naskah hutan menyisakan "Artinya, lebih dari setengah rumah bagi jutaan spesies … sudah hilang" setelah
+    # kalimat luas hutan hujannya dibuang.
+    dibuang = False
+    for par in paragraf:
+        for ki, k in enumerate(par):
+            if not k:  # dibuang pemeriksaan di atas
+                dibuang = True
+                continue
+            if dibuang and _RUJUKAN.match(k):
+                ganti[k] = par[ki] = ""
+                log(f"Kalimat rujukannya ikut dibuang: «{k}»")
+                continue
+            dibuang = False
     teks = "\n\n".join(" ".join(k for k in par if k) for par in paragraf)
     return "\n\n".join(p for p in teks.split("\n\n") if p.strip()), ganti
+
+
+def janji_tanpa_jawaban(teks, inti, log=print):
+    """Kalimat janji di hook ("Di akhir video ini, kamu akan melihat bagaimana …") yang kata-katanya sebagian besar
+    sama dengan jawaban di inti cerita dibuang: jawabannya bocor di detik ke-10. Model 12B tetap menulisnya walau
+    prompt melarang (video hutan: "…memicu kerusakan habitat dan memperburuk perubahan iklim global" = jawabannya)."""
+    m = re.search(r"^(?:Jawaban para ilmuwan|Teorinya): (.+)$", inti or "", re.M)
+    paragraf = teks.split("\n\n")
+    if not m or not paragraf:
+        return teks
+    jawaban = {w for w in re.findall(r"\w+", m.group(1).lower()) if len(w) >= 5}
+    kalimat = pecah_kalimat(paragraf[0])
+    for i, k in enumerate(kalimat[:4]):
+        kata = {w for w in re.findall(r"\w+", k.lower()) if len(w) >= 5} - {"akhir", "video", "melihat", "bagaimana"}
+        if re.search(r"akhir video", k, re.I) and kata and len(kata & jawaban) / len(kata) >= 0.4:
+            log(f"Janji hook membocorkan jawaban — dibuang: «{k}»")
+            paragraf[0] = " ".join(kalimat[:i] + kalimat[i + 1:])
+            break
+    return "\n\n".join(p for p in paragraf if p.strip())
+
+
+# kalimat yang hanya bermakna bersama kalimat sebelumnya
+_RUJUKAN = re.compile(r"^(?:artinya|itu artinya|ini artinya|ini berarti|hal ini berarti|angka (?:ini|itu|tersebut)|"
+                      r"jumlah (?:ini|itu)|luas (?:ini|itu)|dengan kata lain|akibatnya|karena itu|oleh karena itu|"
+                      r"itulah sebabnya|padahal,? angka|sebagai perbandingan)\b", re.I)
 
 
 def _pembanding(teks):
@@ -1023,7 +1062,10 @@ def _tulis_panjang(cfg, bahan, riset, durasi, batal, saat_token, log, gaya="twis
         "konkret dari BAHAN FAKTA). Jangan ada dua bagian yang membahas hal sama."
         + (_daftar_bukti(riset) if gaya == "bangun_teori" else "")
         + ("\nWAJIB: SEMUA hal di daftar catatan pembuat video masuk ke kerangka, masing-masing satu bagian tengah."
-           if gaya == "edukasi" else ""))}],
+           if gaya == "edukasi" else "")
+        # video hutan: topik meminta dampak ke hujan & air bersih, kerangkanya melewatkan itu sama sekali
+        + ("\nWAJIB: setiap hal yang diminta di TOPIK (dampak, penyebab, atau contoh yang disebut) masuk ke kerangka; "
+           "satu bagian boleh membahas beberapa hal yang berkaitan." if gaya == "sains" else ""))}],
         schema, batal=batal, maks_token=90 * n + 200)
     bagian = [b for b in kerangka.get("bagian", []) if b.get("judul")][:n]
     if len(bagian) < 3:
@@ -1080,6 +1122,7 @@ def _tulis_panjang(cfg, bahan, riset, durasi, batal, saat_token, log, gaya="twis
             f"{len(naskah_jadi.split())} kata")
     ganti = {}
     if gaya in GAYA_FAKTA:
+        naskah_jadi = janji_tanpa_jawaban(naskah_jadi, inti, log)
         naskah_jadi, ganti = periksa_fakta(cfg, naskah_jadi, riset, batal, log)
     # awal bab harus tetap ada di naskah (chapter YouTube dicari dari 8 kata pertamanya): kalimat pembuka yang dibuang
     # atau diperbaiki diganti kalimat bab itu berikutnya yang masih ada

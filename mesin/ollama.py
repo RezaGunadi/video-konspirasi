@@ -1,5 +1,6 @@
 """Panggilan ke Ollama lokal (selalu streaming agar tidak kena timeout)."""
 import json
+import re
 import time
 
 import requests
@@ -75,16 +76,48 @@ def _chat(cfg, pesan, *, format=None, suhu=0.7, batal=None, saat_token=None, mak
     return "".join(teks)
 
 
+_FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.I)
+_TRAIL = re.compile(r",(\s*[}\]])")
+
+
+def _calon_json(mentah):
+    """Beberapa tebakan JSON dari jawaban model, dari yang paling apa adanya ke yang paling diperbaiki."""
+    t = (mentah or "").strip()
+    if not t:
+        return
+    yield t
+    bersih = _FENCE.sub("", t).strip()
+    if bersih != t:
+        yield bersih
+    # potong ke kurung terluar (objek {} atau larik []), lalu buang koma menggantung sebelum penutup
+    for buka, tutup in (("{", "}"), ("[", "]")):
+        a, b = bersih.find(buka), bersih.rfind(tutup)
+        if 0 <= a < b:
+            inti = bersih[a:b + 1]
+            yield inti
+            diperbaiki = _TRAIL.sub(r"\1", inti)
+            if diperbaiki != inti:
+                yield diperbaiki
+
+
+def _urai_json(mentah):
+    for calon in _calon_json(mentah):
+        try:
+            return json.loads(calon)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
 def chat_json(cfg, pesan, schema, **kw):
+    # Walau keluaran dipandu skema, sesekali model mengirim JSON rusak (koma hilang, terpotong).
+    # Coba urai + perbaiki; kalau tetap gagal, minta ulang ke model (jarang rusak dua kali).
     kw.setdefault("suhu", 0.3)
-    mentah = chat(cfg, pesan, format=schema, **kw)
-    try:
-        return json.loads(mentah)
-    except json.JSONDecodeError:
-        awal, akhir = mentah.find("{"), mentah.rfind("}")
-        if awal >= 0 and akhir > awal:
-            return json.loads(mentah[awal:akhir + 1])
-        raise RuntimeError("Jawaban AI bukan JSON yang valid")
+    for coba in range(3):
+        hasil = _urai_json(chat(cfg, pesan, format=schema, **kw))
+        if hasil is not None:
+            return hasil
+    raise RuntimeError("Jawaban AI bukan JSON yang valid")
 
 
 def daftar_model(cfg):

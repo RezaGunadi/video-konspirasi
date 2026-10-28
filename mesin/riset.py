@@ -1,5 +1,8 @@
 """Bahan fakta dari Wikipedia supaya naskah tidak mengarang tanggal/nama/angka."""
 import re
+import time
+
+import requests
 
 from . import ollama
 from .alat import http_get
@@ -49,6 +52,23 @@ def _artikel(lang, query, maks_huruf, tepat=False):
         return None
     return {"judul": judul, "lang": lang, "url": f"https://{lang}.wikipedia.org/wiki/{judul.replace(' ', '_')}",
             "teks": teks[:maks_huruf]}
+
+
+def _artikel_tahan(lang, query, maks_huruf, log, batal=None, tepat=False):
+    """_artikel yang menunggu jaringan pulih (1, 2, lalu 4 menit). DNS mini PC pernah mati ±3 menit: riset video hutan
+    kosong dan naskahnya ditulis tanpa sumber, dengan hook mitos "kehabisan napas". Tetap gagal: RuntimeError."""
+    for coba, jeda in enumerate((60, 120, 240, None)):
+        try:
+            return _artikel(lang, query, maks_huruf, tepat=tepat)
+        except requests.RequestException as e:
+            if jeda is None:
+                raise RuntimeError(f"Wikipedia {lang} tidak bisa dihubungi setelah {coba + 1}x coba "
+                                   f"({e.__class__.__name__}) — periksa internet mini PC lalu ulangi") from e
+            log(f"Wikipedia {lang} gagal ({e.__class__.__name__}) — dicoba lagi {jeda} detik lagi")
+            for _ in range(jeda):
+                if batal:
+                    batal.cek()
+                time.sleep(1)
 
 
 _UMUM = {"the", "of", "and", "in", "di", "dan", "yang", "dari", "ke", "misteri", "legenda", "teori", "mystery",
@@ -305,7 +325,9 @@ def kumpulkan(cfg, teks, batal=None, log=print, panjang=False, gali=False):
     sumber = []
     batas = (14000, 5000) if panjang else (6000, 3000)
     try:
-        en = _artikel("en", kk["en"], batas[0]) if kk.get("en") else None
+        en = _artikel_tahan("en", kk["en"], batas[0], log, batal) if kk.get("en") else None
+    except RuntimeError:  # jaringan tetap mati: proyek berhenti, jangan menulis tanpa sumber
+        raise
     except Exception as e:
         log(f"Wikipedia en gagal: {e}")
         en = None
@@ -317,14 +339,16 @@ def kumpulkan(cfg, teks, batal=None, log=print, panjang=False, gali=False):
     id_judul = _tautan_bahasa(en["judul"], "id") if en else None
     try:
         if id_judul:
-            a = _artikel("id", id_judul, batas[1], tepat=True)
+            a = _artikel_tahan("id", id_judul, batas[1], log, batal, tepat=True)
         elif kk.get("id"):
-            a = _artikel("id", kk["id"], batas[1])
+            a = _artikel_tahan("id", kk["id"], batas[1], log, batal)
             if a and not _bertema("id", a["judul"]):
                 log(f"  ✗ Wikipedia id “{a['judul']}” tidak sesuai topik, dilewati")
                 a = None
         else:
             a = None
+    except RuntimeError:
+        raise
     except Exception as e:
         log(f"Wikipedia id gagal: {e}")
         a = None

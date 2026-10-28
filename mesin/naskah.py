@@ -245,8 +245,12 @@ def inti_cerita(cfg, bahan, riset, batal=None, log=print, gaya="meyakinkan"):
         f"Sebelum naskah video {'sains/fakta' if fakta else 'konspirasi/misteri'} ditulis, susun INTI CERITANYA dalam "
         f"bahasa Indonesia sehari-hari, satu kalimat per kolom:\n{kolom}")}]
     try:
-        j = ollama.chat_json(cfg, pesan, SCHEMA_INTI_FAKTA if fakta else SCHEMA_INTI, batal=batal, maks_token=800,
-                             suhu=0.4)
+        try:
+            j = ollama.chat_json(cfg, pesan, SCHEMA_INTI_FAKTA if fakta else SCHEMA_INTI, batal=batal, maks_token=800,
+                                 suhu=0.4)
+        except (RuntimeError, ValueError):  # jawaban terpotong (JSON tidak utuh): sekali lagi dengan batas lebih besar
+            j = ollama.chat_json(cfg, pesan, SCHEMA_INTI_FAKTA if fakta else SCHEMA_INTI, batal=batal,
+                                 maks_token=1400, suhu=0.5)
     except (RuntimeError, ValueError) as e:
         log(f"Inti cerita gagal disusun ({e}) — naskah ditulis langsung")
         return ""

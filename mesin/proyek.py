@@ -465,6 +465,10 @@ def l_riset(p, cfg, batal):
         return
     p["riset"] = riset.kumpulkan(cfg, p["sumber_teks"], batal, log=lambda t: log(p, t),
                                  panjang=p["opsi"]["durasi"] > 180, gali=p["opsi"]["gaya_naskah"] == "bangun_teori")
+    if not p["riset"] and p["opsi"].get("gaya_naskah") in naskah.GAYA_FAKTA:
+        # video fakta tanpa sumber pernah ditulis dari pengetahuan model saja (hutan: hook mitos "kehabisan napas")
+        raise RuntimeError("Tidak ada artikel Wikipedia yang cocok — video fakta tidak ditulis tanpa sumber. "
+                           "Perjelas topiknya lalu ulangi.")
     if not p["riset"]:
         log(p, "Tidak ada artikel Wikipedia yang cocok — naskah ditulis dari pengetahuan umum model")
 

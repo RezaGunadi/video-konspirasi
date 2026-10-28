@@ -747,7 +747,8 @@ def _klip_layak(k, cek=True, latar="", narasi=""):
         return True
     if k.get("judul_cocok") is False:  # judulnya ditolak _saring_judul
         return False
-    if narasi and (footage.orang_tak_relevan(k, narasi) or footage.hewan_lain(k, narasi)):
+    if narasi and (footage.orang_tak_relevan(k, narasi) or footage.hewan_lain(k, narasi)
+                   or footage.peristiwa_lain(k, narasi)):
         return False
     if k.get("pinjam"):
         return _boleh_dipinjam(k, cek, latar)
@@ -779,7 +780,11 @@ def _boleh_dipinjam(k, cek=True, latar=""):
     if k.get("cadangan"):
         return bool(latar) and k.get("kueri") == latar and footage.cocok_judul(k, latar)
     lat = k.get("skor_latar")
-    return (lat if lat is not None else footage.nilai_latar(k)) >= footage.LATAR_JELAS
+    if lat is None:
+        return footage.nilai_latar(k) >= footage.LATAR_JELAS
+    # klip yang tidak menyebut subjek video: ambang footage.LATAR_ASING (pantai senja, latar 7, pernah dipinjam ke
+    # narasi dasar Palung Mariana)
+    return lat >= (footage.LATAR_ASING if k.get("setopik") is False else footage.LATAR_JELAS)
 
 
 def _kandidat_baru(kand, dipakai, sudah_dipakai, di_adegan_ini):
@@ -948,7 +953,7 @@ def _kueri_latar(p, i):
 
 # Naikkan setiap kali logika rencana shot berubah: adegan yang direncanakan versi lama disusun ulang saat langkah
 # footage jalan lagi (misalnya mini PC direstart di tengah footage), kandidatnya tetap.
-RENCANA_VERSI = 8
+RENCANA_VERSI = 9
 
 
 def _rencana_lemah(a):
@@ -1068,6 +1073,7 @@ def _rencana_video(p, a, i, frames_adegan, ketat=True):
                     s["pilih"] < len(b.get("kandidat") or []) else None
                 if not (kb and kb["jenis"] == "video" and not kb.get("gagal")
                         and not footage.orang_tak_relevan(kb, konteks) and not footage.hewan_lain(kb, konteks)
+                        and not footage.peristiwa_lain(kb, konteks)
                         and len(pakai.get(footage.identitas(kb), ())) < footage.maks_bagian(kb, durasi_shot)):
                     continue
                 kb = {x: v for x, v in kb.items() if x != "pinjam_subjek"}  # izin adegan lain tidak ikut

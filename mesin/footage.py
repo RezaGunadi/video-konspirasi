@@ -150,6 +150,23 @@ def hewan_lain(k, konteks):
     return not any(_kata_sama(h, w) for h in hewan for w in kata)
 
 
+# Peristiwa di narasi berbahasa Indonesia / isi foto dari juri AI ("gunung api" bukan kebakaran, jadi "api" tidak ikut)
+_PERISTIWA_ID = re.compile(r"\b(tsunami|gempa|badai|topan|siklon|tornado|banjir|kebakaran|terbakar|bencana|kekeringan|"
+                           r"longsor|perang|ledakan|meledak|tabrakan|kecelakaan|letusan|meletus|erupsi)\b", re.I)
+
+
+def peristiwa_lain(k, konteks):
+    """Klip bencana/peristiwa untuk konteks (narasi + kata kunci + subjek video) yang tidak membahas peristiwa apa
+    pun, dan tidak dinilai tepat oleh juri AI: peta tsunami Tohoku (skor 2, latar 7) pernah jadi latar narasi tekanan
+    di dasar Palung Mariana. Hanya judul dan isi dari juri yang dilihat; deskripsi panjang Wikimedia sering menyebut
+    letusan/ledakan sambil lalu (gunung api bawah laut Kolumbo)."""
+    if k.get("jenis") != "video" or ((k.get("skor_ai") or 0) >= SKOR_BAGUS and not k.get("pinjam")):
+        return False
+    if not (PERISTIWA.search(k.get("judul") or "") or _PERISTIWA_ID.search(k.get("isi_ai") or "")):
+        return False
+    return not (PERISTIWA.search(konteks or "") or _PERISTIWA_ID.search(konteks or ""))
+
+
 def arsip_tak_relevan(k, narasi):
     """Film arsip/siaran/ceramah yang tidak dibutuhkan narasi (narasinya tidak menyebut tahun lampau)."""
     if k.get("jenis") != "video" or not ARSIP.search(f"{k.get('judul') or ''} {k.get('teks') or ''}"):
@@ -1358,6 +1375,9 @@ def _pilih_untuk_dilihat(kandidat, q, sudah, terpakai, jumlah=4, video=False):
 SKOR_BAGUS = 7  # skor AI minimal supaya gambar dianggap tepat (rubrik: 4-6 = hanya setema)
 LATAR_BAGUS = 5  # tata visual "video + stiker": klip minimal setema sudah layak jadi latar (subjeknya di stiker)
 LATAR_JELAS = 7  # klip yang judul/isinya tidak menyebut subjeknya: tempatnya harus jelas berhubungan dengan narasi
+# Klip yang judul/isinya tidak menyebut subjek VIDEO: latar 7 dari juri vision terlalu murah. Di narasi dasar Palung
+# Mariana ia memberi 7 untuk lahan basah Louisiana, pantai senja, dan ngarai sungai; di Sahara untuk festival Douz.
+LATAR_ASING = 8
 # kata judul video yang tidak menunjuk subjek ("Kenapa Komodo Jadi Raksasa…" → komodo, raksasa, pulau)
 _BUKAN_TOPIK = {"kenapa", "mengapa", "bagaimana", "apakah", "jadi", "bisa", "yang", "dari", "dalam", "dengan",
                 "untuk", "adalah", "lebih", "paling", "ternyata", "sebenarnya", "rahasia", "misteri", "fakta", "dunia",
@@ -1387,7 +1407,7 @@ def nilai_latar(k):
     # yang dipakai, jadi "Pottery Plate Shattering" (subjek 5, latar 3) jadi latar narasi lempeng ("plate") India.
     if k.get("setopik", True):
         return lat
-    return lat if lat >= LATAR_JELAS else min(lat, LATAR_BAGUS - 1)
+    return lat if lat >= LATAR_ASING else min(lat, LATAR_BAGUS - 1)
 
 
 def urutkan_untuk_adegan(cfg, narasi, q, format_video, terpakai, cek_gambar, batal=None, log=print,
@@ -1637,6 +1657,23 @@ def siapkan(k, durasi, batal=None, bagian=0):
 
     perlu = round(durasi + 0.5, 2)
     tujuan = F_ASET / f"{kunci}-{int(perlu * 10)}{f'-b{bagian}' if bagian else ''}.mp4"
+
+    def potong_dari(sumber, daftar_mulai, opsi=()):
+        """Potong di titik pertama yang tidak memuat layar hitam. Dulu hanya satu titik yang dicoba: klip laut dalam
+        Palung Mariana (skor 8-10) dicap gagal di tiga proyek karena titik itu jatuh di transisi fade video NOAA."""
+        for mulai in daftar_mulai:
+            try:
+                ffmpeg(["-ss", f"{mulai:.2f}", *opsi, "-i", str(sumber), "-t", f"{perlu:.2f}", "-an",
+                        "-vf", "scale=-2:'min(1080,ih)'", "-c:v", "libx264", "-preset", "veryfast", "-crf", "17",
+                        "-pix_fmt", "yuv420p", str(tujuan)], batal=batal, timeout=600)
+            except RuntimeError:
+                tujuan.unlink(missing_ok=True)
+                continue
+            if detik_hitam(tujuan) < 0.4:
+                return True
+            tujuan.unlink(missing_ok=True)
+        return False
+
     if k["sumber"] == "Wikimedia" and not tujuan.exists():
         # Webm Wikimedia: ffmpeg yang melompat ke tengah file membuka banyak koneksi dan kena batas (429).
         # Cukup unduh bagian awal file dalam satu permintaan, lalu potong di laptop.
@@ -1650,20 +1687,18 @@ def siapkan(k, durasi, batal=None, bagian=0):
         mulai = min(25.0, total * 0.15) if total else 0.0  # lewati kartu judul di awal video sumber
         if bagian:
             mulai += bagian * (perlu + 0.5)
-            if total:
-                mulai = min(mulai, max(0.0, total - perlu - 0.2))
-        sampai = int(min(60 * 1024 * 1024, (mulai + perlu + 4) * laju * 1.3 + 512 * 1024))
+        # geser sedikit saja (transisi fade ±2 detik), supaya tidak jatuh di titik bagian berikutnya (+perlu+0.5)
+        daftar = [mulai + d for d in (0, 2.5, 5, 10)]
+        if total:
+            daftar = list(dict.fromkeys(min(m, max(0.0, total - perlu - 0.2)) for m in daftar))
+        sampai = int(min(60 * 1024 * 1024, (daftar[-1] + perlu + 4) * laju * 1.3 + 512 * 1024))
         awal = unduh(k["url"], F_ASET / f"{kunci}-awal.webm", batas_mb=61, batal=batal,
                      headers={"Range": f"bytes=0-{sampai}"})
         if not awal:
             return None
         try:
-            ffmpeg(["-ss", f"{mulai:.2f}", "-i", str(awal), "-t", f"{perlu:.2f}", "-an",
-                    "-vf", "scale=-2:'min(1080,ih)'", "-c:v", "libx264", "-preset", "veryfast", "-crf", "17",
-                    "-pix_fmt", "yuv420p", str(tujuan)], batal=batal, timeout=600)
-        except RuntimeError:
-            tujuan.unlink(missing_ok=True)
-            return None
+            if not potong_dari(awal, daftar):
+                return None
         finally:
             awal.unlink(missing_ok=True)
 
@@ -1681,13 +1716,9 @@ def siapkan(k, durasi, batal=None, bagian=0):
         awal = min(60.0, panjang * 0.15) if k["sumber"] == "Archive.org" else min(2.0, panjang * 0.05)
         akhir = max(awal, panjang - perlu - (30 if k["sumber"] == "Archive.org" else 1))
         posisi = ((int(kunci, 16) % 1000) / 1000 + bagian * 0.382) % 1  # tiap bagian lompat ±38% film
-        mulai = awal + posisi * max(0.0, akhir - awal)
-        try:
-            ffmpeg(["-ss", f"{mulai:.2f}", "-user_agent", "Mozilla/5.0", "-i", url, "-t", f"{perlu:.2f}", "-an",
-                    "-vf", "scale=-2:'min(1080,ih)'", "-c:v", "libx264", "-preset", "veryfast", "-crf", "17",
-                    "-pix_fmt", "yuv420p", str(tujuan)], batal=batal, timeout=600)
-        except RuntimeError:
-            tujuan.unlink(missing_ok=True)
+        # titik cadangan 13% film lebih jauh (bagian lain melompat 38%, jadi tidak saling tabrak)
+        daftar = [awal + ((posisi + n * 0.13) % 1) * max(0.0, akhir - awal) for n in range(3)]
+        if not potong_dari(url, daftar, ("-user_agent", "Mozilla/5.0")):
             return None
     info = probe(tujuan)
     if not info["video"] or info["durasi"] < 0.5 or detik_hitam(tujuan) >= 0.4:

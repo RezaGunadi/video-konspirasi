@@ -318,6 +318,7 @@ def hapus_stiker(pid, ia, js):
         s = p["adegan"][ia]["shots"][js]
         s["stiker"] = None
         s.pop("stiker_bahan", None)
+        s.pop("tunda_stiker", None)
         _rencana_diterima(p)
         _buang_langkah(p, "render")
         log(p, f"Stiker adegan {ia + 1} shot {js + 1} dihapus")
@@ -738,8 +739,10 @@ def _siapkan_satu_foto(p, a, cfg, batal, judul_video):
 
 
 def _isi_salah(k, narasi):
-    """Klip yang isinya pasti salah untuk narasi ini (orang, hewan lain, peristiwa lain), bukan sekadar lemah."""
-    return footage.orang_tak_relevan(k, narasi) or footage.hewan_lain(k, narasi) or footage.peristiwa_lain(k, narasi)
+    """Klip yang isinya pasti salah untuk narasi ini (salah arti kata kunci, orang, hewan lain, peristiwa lain), bukan
+    sekadar lemah."""
+    return footage.salah_arti(k, narasi) or footage.orang_tak_relevan(k, narasi) or footage.hewan_lain(k, narasi) \
+        or footage.peristiwa_lain(k, narasi)
 
 
 def _klip_layak(k, cek=True, latar="", narasi=""):
@@ -769,6 +772,8 @@ def _shot_layak(k, latar="", narasi=""):
     """Sisa kandidat (_kandidat_baru) yang masih pantas tampil di tata visual "video + stiker"."""
     if k["jenis"] == "video":
         return _klip_layak(k, latar=latar, narasi=narasi)
+    if narasi and footage.salah_arti(k, narasi):
+        return False
     return (k.get("skor_ai") or 0) >= 5 or (k.get("skor_ai") is None and bool(k.get("topik")))
 
 
@@ -925,6 +930,8 @@ def _latar_cadangan(p, i, cfg, kand):
     kecuali = {k["id"] for k in kand} | {k["id"] for b in p["adegan"] for k in (b.get("kandidat") or [])}
     q_cad, cad = footage.klip_latar(cfg, kueri, p["opsi"]["format"], kecuali, _konteks_klip(p, p["adegan"][i]),
                                     log=lambda t: log(p, t), subjek=subjek)
+    konteks = _konteks_klip(p, p["adegan"][i])
+    cad = [k for k in cad if not footage.salah_arti(k, konteks)]
     if cad:
         log(p, f"  Tidak ada klip yang pas — {len(cad)} klip tempat “{q_cad}” disiapkan sebagai latar")
     else:
@@ -959,7 +966,7 @@ def _kueri_latar(p, i):
 
 # Naikkan setiap kali logika rencana shot berubah: adegan yang direncanakan versi lama disusun ulang saat langkah
 # footage jalan lagi (misalnya mini PC direstart di tengah footage), kandidatnya tetap.
-RENCANA_VERSI = 9
+RENCANA_VERSI = 10
 
 
 def _rencana_lemah(a):
@@ -1024,6 +1031,43 @@ def _saring_judul(p, a, i, cfg, frames_adegan):
             return
         log(p, "  Judul klip tidak cocok: " + "; ".join((k.get("judul") or "")[:50] for k in tolak))
         a["shots"] = _rencana_video(p, a, i, frames_adegan)
+
+
+# Kata penanda perbandingan di narasi: yang langsung mendahului benda pembandingnya dulu ("mirip seperti ban
+# berjalan"), baru ajakan membayangkan ("Bayangkan sebuah bangunan raksasa").
+_PENANDA_BANDING = {"seperti", "mirip", "setara", "seukuran", "sebesar", "setinggi", "seberat", "sepanjang", "seluas",
+                    "sedalam", "menumpuk", "dibandingkan", "dibanding", "melampaui", "melebihi", "daripada", "ibarat",
+                    "layaknya", "bagaikan"}
+_PENANDA_BAYANG = {"bayangkan", "bayangkanlah", "membayangkan", "membayangkannya"}
+
+
+def _detik_analogi(a):
+    """Detik (dari awal adegan) saat narasi menyebut benda analogi adegan ini, dari waktu kata hasil Whisper: kata
+    pembandingnya dari AI (q["analogi_kata"]), angka jumlahnya ("1.600 gajah"), atau kata penanda perbandingan yang
+    tidak diikuti angka ("melebihi 7.200 meter" bukan analogi). None kalau analoginya tidak disebut di adegan ini:
+    foto gedung pernah muncul di hook video Everest yang sama sekali tidak menyebut gedung."""
+    kata = a.get("kata") or []
+    norm = [re.sub(r"\W", "", k["teks"].lower()) for k in kata]
+    q = a.get("q") or {}
+    sebut = re.sub(r"\W", "", ((q.get("analogi_kata") or "").split() or [""])[0].lower())
+    if sebut:
+        for k, w in zip(kata, norm):
+            if w == sebut or (len(sebut) >= 4 and w.startswith(sebut)):  # "gajah" ↔ "gajahnya"
+                return k["t0"]
+    jumlah = int(q.get("jumlah") or 0)
+    if jumlah > 1:
+        for k, w in zip(kata, norm):
+            if w.isdigit() and int(w) == jumlah:
+                return k["t0"]
+
+    def penanda(n, kelompok):
+        return norm[n] in kelompok and not any(x.isdigit() for x in norm[n + 1:n + 3])
+    for n in range(len(norm)):
+        if penanda(n, _PENANDA_BANDING | _PENANDA_BAYANG):
+            # "Bayangkan seperti sebuah karpet": penanda yang langsung mendahului bendanya dipakai kalau dekat
+            dekat = next((m for m in range(n, min(n + 6, len(norm))) if penanda(m, _PENANDA_BANDING)), n)
+            return kata[dekat]["t0"]
+    return None
 
 
 def _rencana_video(p, a, i, frames_adegan, ketat=True):
@@ -1103,7 +1147,7 @@ def _rencana_video(p, a, i, frames_adegan, ketat=True):
     def tepat(j):
         k = kand[j]
         if k["jenis"] == "video" or k.get("pinjam") or k.get("analogi") or k.get("gagal") \
-                or footage.identitas(k) in dipakai:
+                or footage.identitas(k) in dipakai or (cek and footage.salah_arti(k, konteks)):
             return False
         if cek:
             return (k.get("skor_ai") or 0) >= footage.SKOR_BAGUS
@@ -1238,12 +1282,29 @@ def _rencana_video(p, a, i, frames_adegan, ketat=True):
         kb = kand[s["pilih"]] if s.get("pilih") is not None else None
         if kb and kb["jenis"] == "video" and s["frames"] >= 1.5 * fps and mulai + s["frames"] / fps >= 3.5:
             layak_stiker.append(s)
-    # Analogi ("setara dengan menumpuk 1.600 gajah"): foto benda pembandingnya ditumpuk di shot klip pertama.
+    # Analogi ("setara dengan menumpuk 1.600 gajah"): foto benda pembandingnya ditumpuk di shot klip yang sedang
+    # tampil saat analoginya diucapkan, muncul pas di detik itu (_detik_analogi). Dulu selalu di shot klip pertama:
+    # foto karpet/ban berjalan/pesawat di video Everest muncul dan hilang di detik 0-4, kata analoginya baru
+    # terdengar di detik 7-11.
     analogi = next((j for j, k in enumerate(kand) if k.get("analogi") and footage.identitas(k) not in dipakai), None)
-    if analogi is not None and layak_stiker:
-        s = layak_stiker[0]
-        s["stiker"], s["tumpuk"] = analogi, int(a["q"].get("jumlah") or 0)
-        dipakai.add(footage.identitas(kand[analogi]))
+    detik = _detik_analogi(a) if analogi is not None else None
+    if detik is not None:
+        calon, t = [], 0.0
+        for s in shots:
+            awal, t = t, t + s["frames"] / fps
+            kb = kand[s["pilih"]] if s.get("pilih") is not None else None
+            if not (kb and kb["jenis"] == "video") or a["mulai"] + t < 3.5 or awal > detik + 2.0:
+                continue
+            tunda = max(0.12, detik - 0.15 - awal)
+            if t - awal - tunda >= 1.2:
+                calon.append((t - awal - tunda, s, tunda))
+        # shot yang sedang tampil saat analoginya diucapkan, kecuali stikernya cuma sempat tampil <2 detik di situ:
+        # shot klip berikutnya (mulai ≤2 detik kemudian) dipakai (foto gedung Everest dulu hanya tampil 1,3 detik)
+        pilih_analogi = next((c for c in calon if c[0] >= 2.0), calon[0] if calon else None)
+        if pilih_analogi:
+            _, s, tunda = pilih_analogi
+            s["stiker"], s["tumpuk"], s["tunda_stiker"] = analogi, int(a["q"].get("jumlah") or 0), round(tunda, 2)
+            dipakai.add(footage.identitas(kand[analogi]))
     # Stiker foto tepat: shot klip ke-1, ke-3, … selama fotonya ada.
     for n, s in enumerate(layak_stiker):
         if n % 2 or s.get("stiker") is not None:
@@ -1634,8 +1695,9 @@ def l_render(p, cfg, batal):
             mulai_shot, t_shot = t_shot, t_shot + s["frames"] / render.FPS
             stiker = None
             if s.get("stiker_bahan") and os.path.exists(s["stiker_bahan"]["file"]):
-                # judul hook memenuhi layar ±3 detik pertama: stiker menunggu sampai judulnya hilang
-                tunda = max(0.12, 3.05 - mulai_shot) if ada_hook else 0.12
+                # judul hook memenuhi layar ±3 detik pertama: stiker menunggu sampai judulnya hilang. Stiker analogi
+                # menunggu sampai benda pembandingnya diucapkan (tunda_stiker dari _rencana_video).
+                tunda = max(s.get("tunda_stiker") or 0.12, 3.05 - mulai_shot if ada_hook else 0)
                 if s["frames"] / render.FPS - tunda >= 1.0:
                     tumpuk = int(s.get("tumpuk") or 0)
                     # stiker analogi: labelnya jumlahnya ("×1.600"), bukan subjek adegan

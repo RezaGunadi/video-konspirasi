@@ -188,6 +188,99 @@ def peristiwa_lain(k, konteks):
     return not (klip & ada or "bencana" in klip or "bencana" in ada)
 
 
+# Kata kunci footage bahasa Inggris yang punya arti lain yang umum → kata penanda arti lain itu (judul klip atau isi
+# menurut juri gambar, bahasa Inggris/Indonesia). Video Everest pernah menampilkan "Placing a plate of spaghetti
+# bolognese", "Vegan-looking food on a plate", dan "Pottery Plate Shattering" (dinilai 8 oleh juri gambar) untuk narasi
+# lempeng ("plate") India; "dragon" di video komodo mendatangkan barongsai dan kartun. Daftar tetap: model 12B yang
+# diminta mencari kata bermakna ganda sendiri melewatkan "plate" dan malah menandai carpet/island/ocean.
+_MAKNA_LAIN = {
+    "plate": "food dish dishes dinner meal kitchen pottery ceramic porcelain spaghetti pasta restaurant breakfast lunch "
+             "license licence piring makanan keramik",
+    "mantle": "fireplace mantelpiece shelf cloak clothing christmas perapian",
+    "crust": "bread pizza pie pastry baking bakery roti",
+    "core": "apple fitness workout abs gym exercise processor cpu",
+    "trench": "coat fashion soldier soldiers military battlefield wwi parit",
+    "dragon": "dance dancer costume festival chinese lunar cartoon toy fantasy fairy tale barongsai naga",
+    "bat": "baseball cricket softball player stadium pemukul",
+    "seal": "stamp wax letter envelope document segel",
+    "crane": "construction tower lifting derek",
+    "jaguar": "car vehicle automobile mobil",
+    "python": "programming code coding software computer",
+    "mouse": "computer click keyboard cursor laptop",
+    "ring": "wedding engagement jewelry diamond finger boxing cincin",
+    "bark": "dog dogs puppy anjing",
+    "wave": "waving hand greeting hello crowd stadium lambaian",
+    "trunk": "car luggage suitcase bagasi",
+    "star": "celebrity actor actress movie film hollywood artis selebriti",
+    "hole": "golf pothole putt putting",
+    "belt": "leather buckle fashion trousers pants waist",
+    "tree": "christmas ornament ornaments genealogy",
+    "canopy": "tent patio gazebo wedding umbrella tenda",
+    "logging": "software computer data server code login",
+    "log": "software computer data server code login",
+    "crown": "king queen royal jewel tiara mahkota",
+    "cell": "phone smartphone mobile prison jail battery penjara",
+    "shell": "petrol gasoline fuel station bullet ammunition",
+    "organ": "piano church music musician keyboard",
+    "tank": "army military war battle soldier tentara",
+    "jet": "aircraft fighter pilot airport pesawat",
+    "range": "kitchen stove oven shooting gun",
+    "rock": "music concert band guitar stage musik konser",
+    "stream": "streaming live gaming gamer twitch online broadcast",
+    "cloud": "computing server storage software technology",
+    "web": "internet website browser online",
+    "virus": "computer malware hacker antivirus",
+    "smoke": "cigarette cigar vape vaping tobacco rokok ashtray",
+    "smoking": "cigarette cigar vape vaping tobacco rokok ashtray",
+    "fire": "fireworks fireplace",
+    "bear": "teddy market stocks trading",
+    "plant": "factory industrial manufacturing pabrik",
+}
+_MAKNA_LAIN = {w: set(t.split()) for w, t in _MAKNA_LAIN.items()}
+# Kata yang di situs stock video hampir selalu berarti lain → kata yang menandai arti sainsnya. Kalau kueri/narasi
+# memakai arti sains itu, judul klip yang menyebut kata ini juga harus menyebut penanda arti sainsnya: penanda arti
+# lain tidak mungkin lengkap ("Fruit with yogurt and granola on a plate", "Burgers on plates on a table" untuk kueri
+# "oceanic plate movement").
+_ARTI_SAINS = {
+    "plate": "tectonic tectonics oceanic continental subduction boundary boundaries lithosphere lithospheric crust "
+             "earth geology geological map diagram pacific indian eurasian african american nazca philippine "
+             "australian antarctic cocos caribbean arabian juan lempeng",
+    "dragon": "komodo komodoensis varanus lizard monitor reptile kadal",
+    "mantle": "earth convection magma plume geology geological lithosphere core crust planet",
+    "crust": "earth continental oceanic geology geological tectonic lithosphere planet rock",
+    "core": "earth inner outer iron planet geology geological magnetic",
+    "trench": "mariana japan kermadec tonga kuril java sunda peru chile atacama puerto philippine ocean oceanic deep sea "
+              "marine seafloor subduction hadal abyssal underwater amphipod palung",
+}
+_ARTI_SAINS = {w: set(t.split()) for w, t in _ARTI_SAINS.items()}
+
+
+def salah_arti(k, konteks):
+    """Judul atau isi klip (menurut juri gambar) memakai kata bermakna ganda (_MAKNA_LAIN) bersama penanda arti
+    lainnya: "Pottery Plate Shattering" (plate + pottery), "Vegan-looking food on a plate". Penanda yang memang ada di
+    konteks (narasi + kata kunci adegan) tidak dihitung. Berlaku juga untuk klip yang dinilai tinggi juri gambar —
+    juri itu yang tertipu. Deskripsi panjang Wikimedia tidak dilihat (isinya bisa menyebut apa saja). Kata bermakna
+    ganda di kueri pencarian klipnya juga dihitung: kueri "forest fire" bisa mendapat "Fireworks over the city"."""
+    teks = _kata(f"{k.get('judul') or k.get('teks') or ''} {k.get('isi_ai') or ''}")
+    if not teks:
+        return False
+    ada = set(_kata(konteks))
+    kueri = _kata(k.get("kueri") or "")
+    for w, tanda in _MAKNA_LAIN.items():
+        lain = [x for x in teks if not _kata_sama(w, x)]  # "stream" sendiri bukan penanda "streaming"
+        if (len(lain) < len(teks) or any(_kata_sama(w, x) for x in kueri)) and any(
+                _kata_sama(t, x) for t in tanda if t not in ada for x in lain):
+            return True
+    # deskripsi panjang boleh MEMBUKTIKAN arti sainsnya ("The Farallon Plate": deskripsinya tentang subduksi)
+    luas = teks + _kata(k.get("teks") or "") if k.get("judul") else teks
+    cari = kueri + list(ada)
+    for w, sains in _ARTI_SAINS.items():
+        if any(_kata_sama(w, x) for x in teks) and not any(_kata_sama(t, x) for t in sains for x in luas) \
+                and any(_kata_sama(t, x) for t in sains for x in cari):
+            return True
+    return False
+
+
 def arsip_tak_relevan(k, narasi):
     """Film arsip/siaran/ceramah yang tidak dibutuhkan narasi (narasinya tidak menyebut tahun lampau)."""
     if k.get("jenis") != "video" or not ARSIP.search(f"{k.get('judul') or ''} {k.get('teks') or ''}"):

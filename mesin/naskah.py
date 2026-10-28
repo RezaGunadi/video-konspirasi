@@ -37,7 +37,7 @@ GAYA_NASKAH = {
         "aturan": """- Ikuti arahan dari TOPIK / CATATAN pembuat video, tetap dengan aturan di bawah.
 - Ini video FAKTA, bukan teori konspirasi atau opini. Semua isi harus benar menurut BAHAN FAKTA atau pengetahuan ilmiah yang sangat umum. Bedakan yang sudah pasti ("para ilmuwan menemukan", "hasil pengukuran menunjukkan") dari dugaan ilmiah ("para ilmuwan menduga", "kemungkinan besar"). Kalau ragu, jangan sebut angka.
 - HOOK = dua kalimat pertama, masing-masing maksimal 14 kata: fakta paling mengejutkan dari topik ini yang bisa langsung dibayangkan, lalu kontras "tapi…" yang memancing pertanyaan besar. Polanya seperti "Organisme terbesar di dunia bukan paus biru. Tapi sebuah hutan yang semua pohonnya berbagi satu akar." — tulis kalimatmu sendiri dari topik ini, jangan menyalin contoh. JANGAN membuka dengan pengantar, definisi, sapaan, "tahukah kamu", "jika kamu berdiri di…", atau latar sejarah.
-- Kalimat ketiga: janji konkret tentang apa yang baru terungkap di akhir video (penyebabnya, buktinya, atau siapa yang menemukannya), dengan kata-katamu sendiri dari topik ini. JANGAN memakai kalimat jadi seperti "mengubah cara kita memandang…".
+- Kalimat ketiga: janji konkret tentang apa yang baru terungkap di akhir video (penyebabnya, buktinya, atau siapa yang menemukannya), dengan kata-katamu sendiri dari topik ini, TANPA menyebut jawabannya — jawaban hook baru dibuka menjelang akhir. JANGAN memakai kalimat jadi seperti "mengubah cara kita memandang…".
 - Lalu jelaskan kenapa itu aneh: bagaimana biasanya, lalu apa yang berbeda di sini ("Sungai besar biasanya berkelok dan berpindah. Tapi Nil tidak.").
 - Susun sebagai rangkaian pertanyaan yang dijawab satu per satu. Tiap jawaban membuka pertanyaan berikutnya, dan tiap paragraf diakhiri pancingan ke paragraf berikutnya ("Tapi itu belum yang paling aneh.", "Lalu dari mana tekanan sebesar itu?"). Urutkan dari yang mengejutkan ke yang PALING mengejutkan; jawaban hook disimpan untuk menjelang akhir.
 - Untuk konsep yang sulit, pakai analogi sehari-hari ("bayangkan selang taman yang dibiarkan menyala", "cara kerjanya mirip lampu lava raksasa") dan pembanding skala yang mudah dibayangkan ("seluas 32 ribu kolam renang olimpiade").
@@ -383,12 +383,15 @@ def buang_fakta_berulang(teks):
     return teks
 
 
-_PEMBANDING = re.compile(r"\b(daripada|dibandingkan?|setara|kali lipat|seukuran|setinggi|sebesar|seberat|seluas|"
-                         r"secepat|sepanjang|lebih (cepat|lambat|besar|kecil|tinggi|rendah|panjang|berat|tua|dalam|"
-                         r"luas|banyak))\b", re.I)
-# perbandingan DENGAN sesuatu ("lebih cepat daripada kuku", "setara 1.600 gajah") — "tumbuh lebih tinggi" saja bukan
-_BANDING_OBJEK = re.compile(r"\b(daripada|dibandingkan?|setara|kali lipat|(seukuran|setinggi|sebesar|seberat|seluas|"
-                            r"secepat|sepanjang)(?!\s+(ini|itu|apa)\b))\b", re.I)  # "energi sebesar ini" bukan pembanding
+_PEMBANDING = re.compile(r"\b(daripada|dibandingkan?|setara|kali lipat|melampaui|melebihi|seukuran|setinggi|sebesar|"
+                         r"seberat|seluas|secepat|sepanjang|sedalam|sejauh|lebih (cepat|lambat|besar|kecil|tinggi|rendah|"
+                         r"panjang|berat|tua|dalam|luas|banyak))\b", re.I)
+# perbandingan DENGAN sesuatu ("lebih cepat daripada kuku", "setara 1.600 gajah") — "tumbuh lebih tinggi" saja bukan.
+# "melampaui"/"lebih … dari" ikut: naskah Everest menulis 100 puncak di atas 7.200 m "melampaui ketinggian jelajah
+# pesawat" (±11 km) dan kalimat itu tidak pernah diperiksa karena tanpa angka berupa digit.
+_BANDING_OBJEK = re.compile(r"\b(daripada|dibandingkan?|setara|kali lipat|melampaui|melebihi|mengalahkan|menandingi|"
+                            r"lebih \w+ (?:dari|ketimbang)|(seukuran|setinggi|sebesar|seberat|seluas|secepat|sepanjang|"
+                            r"sedalam|sejauh)(?!\s+(ini|itu|apa)\b))\b", re.I)  # "energi sebesar ini" bukan pembanding
 # kata yang wajar muncul di perbaikan walau tidak ada di naskah/sumber (arah perbandingan, keterangan waktu)
 _KATA_PERBAIKAN = {"lambat", "cepat", "kecil", "besar", "rendah", "tinggi", "pendek", "panjang", "ringan", "berat",
                    "muda", "sedikit", "banyak", "awalnya", "dahulu", "mula-mula", "sekitar", "hampir", "kurang",
@@ -465,6 +468,200 @@ def _catatan_waktu(kalimat, kutipan):
     return ""
 
 
+# satuan → (besaran, faktor ke satuan dasar), untuk menghitung perbandingan dengan benda sehari-hari
+_UKURAN = {**dict.fromkeys(("mm", "milimeter", "millimeter"), ("panjang", 1e-3)),
+           **dict.fromkeys(("cm", "sentimeter", "centimeter"), ("panjang", 1e-2)),
+           **dict.fromkeys(("m", "meter", "metre"), ("panjang", 1.0)),
+           **dict.fromkeys(("km", "kilometer", "kilometre"), ("panjang", 1e3)),
+           **dict.fromkeys(("mil", "mile", "miles"), ("panjang", 1609.0)),
+           **dict.fromkeys(("kaki", "feet", "ft", "foot"), ("panjang", 0.3048)),
+           **dict.fromkeys(("inci", "inch"), ("panjang", 0.0254)),
+           **dict.fromkeys(("g", "gram"), ("massa", 1e-3)), **dict.fromkeys(("kg", "kilogram"), ("massa", 1.0)),
+           **dict.fromkeys(("ton", "tonne", "tons"), ("massa", 1e3)),
+           **dict.fromkeys(("detik", "second"), ("waktu", 1.0)), **dict.fromkeys(("menit", "minute"), ("waktu", 60.0)),
+           **dict.fromkeys(("jam", "hour"), ("waktu", 3600.0)), **dict.fromkeys(("hari", "day"), ("waktu", 86400.0)),
+           **dict.fromkeys(("minggu", "week"), ("waktu", 604800.0)),
+           **dict.fromkeys(("bulan", "month"), ("waktu", 2.63e6)), **dict.fromkeys(("tahun", "year"), ("waktu", 3.156e7)),
+           "bar": ("tekanan", 1e5), **dict.fromkeys(("atm", "atmosfer", "atmosphere"), ("tekanan", 101325.0)),
+           **dict.fromkeys(("pa", "pascal"), ("tekanan", 1.0)), "psi": ("tekanan", 6895.0),
+           **dict.fromkeys(("kiloton", "kt"), ("tnt", 1e3)), **dict.fromkeys(("megaton", "mt"), ("tnt", 1e6)),
+           **dict.fromkeys(("hektar", "hektare", "ha"), ("panjang^2", 1e4))}
+_PENGALI = {"ribu": 1e3, "thousand": 1e3, "juta": 1e6, "million": 1e6, "miliar": 1e9, "billion": 1e9,
+            "triliun": 1e12}
+_KATA_ANGKA = {"satu": 1, "dua": 2, "tiga": 3, "empat": 4, "lima": 5, "enam": 6, "tujuh": 7, "delapan": 8,
+               "sembilan": 9, "sepuluh": 10, "seratus": 100, "seribu": 1000, "sejuta": 1e6, "setengah": 0.5}
+_ARAH = ["lebih besar", "lebih kecil", "kira-kira sama", "kali lipat", "bukan perbandingan ukuran"]
+
+
+def _satuan(teks):
+    """"cm per tahun" → ("panjang/waktu", 1e-2 / 3.156e7); "juta massa matahari" → ("massa matahari", 1e6). Satuan
+    yang tidak dikenal jadi besaran berupa kata-katanya sendiri, jadi "1.600 gajah" hanya sebanding dengan "gajah"."""
+    teks = str(teks or "").lower().replace("²", " persegi").replace("³", " kubik")
+    hasil = []
+    for b in re.split(r"\s*(?:/|\bper\b)\s*", teks, maxsplit=1):
+        nama, dasar, f, pangkat, lain = None, 1.0, 1.0, 1, []
+        for w in re.findall(r"[a-z]+|[23](?![\d.])", b):
+            if w in _PENGALI:
+                f *= _PENGALI[w]
+            elif w in ("persegi", "2"):
+                pangkat = 2
+            elif w in ("kubik", "3"):
+                pangkat = 3
+            elif w in _UKURAN and nama is None:
+                nama, dasar = _UKURAN[w]
+            elif w not in ("tnt", "sekitar", "kira", "lebih", "dari", "di", "atas", "permukaan", "laut", "rata"):
+                lain.append(w)
+        if nama == "massa" and "tnt" in b:  # "ton TNT" adalah energi, dalam ton
+            nama, dasar = "tnt", dasar / 1e3
+        if nama:
+            hasil.append((nama if pangkat == 1 else f"{nama}^{pangkat}", f * dasar ** pangkat))
+        else:
+            hasil.append((" ".join(lain), f))
+    return "/".join(h[0] for h in hasil), hasil[0][1] / (hasil[1][1] if len(hasil) > 1 else 1.0)
+
+
+def _bilangan(teks):
+    """Semua bilangan di teks: "7.200" → 7200, "1.071,8" → 1071.8, "4,3 juta" → 4.3 dan 4300000, "empat" → 4."""
+    hasil = set()
+    for m in re.finditer(r"(\d+(?:[.,]\d+)*)(?:\s+(ribu|juta|miliar|triliun))?", teks.lower()):
+        a = m.group(1)
+        if re.fullmatch(r"\d{1,3}(?:\.\d{3})+(?:,\d+)?", a):
+            x = float(a.replace(".", "").replace(",", "."))
+        elif re.fullmatch(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?", a):
+            x = float(a.replace(",", ""))
+        else:
+            x = float(a.replace(",", ".")) if a.count(",") + a.count(".") <= 1 else 0.0
+        hasil |= {x, x * _PENGALI[m.group(2)]} if m.group(2) else {x}
+    hasil |= {float(_KATA_ANGKA[w]) for w in re.findall(r"[a-z]+", teks.lower()) if w in _KATA_ANGKA}
+    return hasil - {0.0}
+
+
+def _hitung_banding(x, bilangan):
+    """(salah, hitungan) dari isian model untuk satu kalimat pembanding, atau None kalau tidak bisa dihitung: angka
+    naskah yang tidak tertulis di kalimatnya (dikarang model), satuan yang tidak sebanding, atau bukan perbandingan
+    ukuran. Kodelah yang memutuskan benar-salahnya — model 12B tahu pesawat terbang di ±11 km, tapi saat diminta
+    menilai, kalimat "7.200 m melampaui ketinggian jelajah pesawat" kadang tetap dianggap benar."""
+    try:
+        a, b, kali = (float(x.get(k) or 0) for k in ("nilai_naskah", "nilai_pembanding", "kali"))
+    except (TypeError, ValueError):
+        return None
+    arah = x.get("arah")
+    ada = lambda n: any(abs(n - y) <= 0.01 * y for y in bilangan)
+    if arah not in _ARAH[:4] or a <= 0 or b <= 0 or not ada(a) or (arah == "kali lipat" and not (kali > 0 and ada(kali))):
+        return None
+    (sa, fa), (sb, fb) = _satuan(x.get("satuan_naskah")), _satuan(x.get("satuan_pembanding"))
+    if sa != sb or not sa:
+        return None
+    r = a * fa / (b * fb)
+    salah = {"lebih besar": r < 0.85, "lebih kecil": r > 1 / 0.85, "kira-kira sama": not 0.5 <= r <= 2,
+             "kali lipat": not 0.5 <= r / (kali or 1) <= 2}[arah]
+    return salah, (f"{a:g} {x.get('satuan_naskah')} vs {x.get('pembanding')} ±{b:g} {x.get('satuan_pembanding')}: "
+                   f"{r:.2g} kali, naskah: {arah}{f' {kali:g}' if arah == 'kali lipat' else ''}"), \
+        str(x.get("pembanding") or "")
+
+
+def _isi_banding(cfg, butir, batal, suhu):
+    """Model hanya mengisi angka kedua hal yang dibandingkan; benar-salahnya dihitung _hitung_banding."""
+    daftar = "\n".join(f"{n + 1}) {k}" + (f"\n   Kalimat sebelumnya: {s}" if s else "")
+                       for n, (k, s) in enumerate(butir))
+    schema = {"type": "object", "required": ["kalimat"], "properties": {"kalimat": {
+        "type": "array", "minItems": len(butir), "maxItems": len(butir), "items": {
+            "type": "object",
+            # arah (klaim naskah) diisi SEBELUM pengetahuan: kalau sesudahnya, model menulis arah yang benar
+            # ("lebih kecil" untuk 7.200 m vs pesawat) alih-alih yang diklaim naskah ("melampaui")
+            "required": ["no", "hal", "nilai_naskah", "satuan_naskah", "pembanding", "arah", "kali", "pengetahuan",
+                         "nilai_pembanding", "satuan_pembanding"],
+            "properties": {"no": {"type": "integer"}, "hal": {"type": "string"},
+                           "nilai_naskah": {"type": "number"}, "satuan_naskah": {"type": "string"},
+                           "pembanding": {"type": "string"}, "arah": {"type": "string", "enum": _ARAH},
+                           "kali": {"type": "number"}, "pengetahuan": {"type": "string"},
+                           "nilai_pembanding": {"type": "number"}, "satuan_pembanding": {"type": "string"}}}}}}
+    pesan = [{"role": "user", "content": (
+        "Tiap kalimat naskah video sains di bawah membandingkan suatu ukuran dengan sesuatu.\n\n" + daftar + "\n\n"
+        "Untuk tiap kalimat isi:\n"
+        "- hal: sifat yang dibandingkan (tinggi, kedalaman, kecepatan, berat, panjang, tekanan, daya ledak), bukan "
+        "jumlah bendanya;\n"
+        "- nilai_naskah dan satuan_naskah: angka sifat itu PERSIS seperti tertulis di kalimat atau kalimat sebelumnya "
+        "(ukurannya sendiri, bukan selisihnya, bukan jumlah bendanya); 0 kalau tidak ada angkanya;\n"
+        "- pembanding: benda atau ukuran yang dijadikan pembanding;\n"
+        "- arah: yang DIKATAKAN naskah tentang hal itu dibanding pembandingnya, walaupun mungkin keliru: \"lebih "
+        "besar\" (juga lebih tinggi, jauh, dalam, cepat, berat, kuat, melampaui, melebihi), \"lebih kecil\", "
+        "\"kira-kira sama\" (setara, seukuran, sebesar, hampir sama), \"kali lipat\" (sekian kali pembandingnya), atau "
+        "\"bukan perbandingan ukuran\" (analogi bentuk atau cara kerja, perbandingan tanpa ukuran);\n"
+        "- kali: untuk \"kali lipat\", berapa kali menurut naskah; selain itu 0;\n"
+        "- pengetahuan: satu kalimat tentang berapa ukuran pembanding itu biasanya menurut pengetahuan umum (misalnya "
+        "\"bus kota panjangnya sekitar 12 meter\"), untuk sifat yang sama dengan hal;\n"
+        "- nilai_pembanding dan satuan_pembanding: ukuran pembanding itu seperti tertulis di kalimat, atau kalau tidak "
+        "tertulis, angka dari pengetahuan tadi (perkiraan terbaikmu). Pakai satuan yang sama dengan satuan_naskah "
+        "kalau bisa; 0 hanya kalau pembandingnya bukan benda atau ukuran nyata.")}]
+    try:
+        j = ollama.chat_json(cfg, pesan, schema, batal=batal, maks_token=180 * len(butir) + 80, suhu=suhu)
+    except (RuntimeError, ValueError):
+        return [None] * len(butir)
+    isi = {_int(x.get("no")): x for x in j.get("kalimat", []) if isinstance(x, dict)}
+    return [isi.get(n + 1) for n in range(len(butir))]
+
+
+def _periksa_pembanding(cfg, butir, batal, log):
+    """Kalimat yang membandingkan ukuran dengan benda sehari-hari ("100 puncak di atas 7.200 m … melampaui ketinggian
+    jelajah pesawat", "10 mm per tahun … lebih cepat daripada kuku", "2.550 km … hampir setara Jakarta–Singapura").
+    butir: [(kalimat, kalimat sebelumnya)]. Isian model kadang meleset (selisih "2 km" dibandingkan dengan tinggi
+    Everest, kuku "tidak tahu"), jadi kalimat yang terhitung salah diisi ulang dengan suhu lain: salah hanya kalau dua
+    hitungan salah dan tidak ada hitungan yang benar. Mengembalikan {indeks: (hitungan, pembanding)} untuk kalimat
+    yang salah."""
+    hasil = {n: [] for n in range(len(butir))}
+
+    def isi(idx, suhu):
+        b = [butir[n] for n in idx]
+        for n, x in zip(idx, [x for m in range(0, len(b), 6) for x in _isi_banding(cfg, b[m:m + 6], batal, suhu)]):
+            hasil[n].append(x and _hitung_banding(x, _bilangan(" ".join(butir[n]))))
+
+    isi(list(hasil), 0.1)
+    curiga = [n for n, h in hasil.items() if h[0] and h[0][0]]
+    if curiga:
+        isi(curiga, 0.5)
+        isi([n for n in curiga if not hasil[n][1]], 0.7)  # isian kedua tidak bisa dihitung
+    salah = {}
+    for n in curiga:
+        nilai = [h[0] for h in hasil[n] if h]
+        if nilai.count(True) >= 2 and False not in nilai:
+            salah[n] = hasil[n][0][1:]  # (hitungan, pembanding)
+        else:
+            log(f"Perbandingan diragukan tapi tidak pasti ({hasil[n][0][1]}): «{butir[n][0]}»")
+    return salah
+
+
+def _tanpa_banding(cfg, butir, batal, dikenal):
+    """Kalimat dengan perbandingan keliru ditulis ulang tanpa perbandingannya. butir: [(kalimat, pembanding, wajib)].
+    Kalimat tanpa angka sendiri ("Angka ini berarti …") dibuang saja (""). Hasil tulis ulang harus membuang benda
+    pembandingnya, tetap memuat semua angkanya, dan tanpa kata rusak — dulu "seberat 150 kilogram" (bukan pembanding)
+    membuat tulis ulang kalimat hook komodo ditolak dan kalimatnya dibuang. Gagal: dibuang, kecuali wajib (kalimat
+    hook) — itu dibiarkan apa adanya."""
+    hasil = []
+    for k, pembanding, wajib in butir:
+        benda = {w for w in re.findall(r"\w+", pembanding.lower()) if len(w) >= 4} - _KATA_PERBAIKAN
+        baru = ""
+        for suhu in ((0.2, 0.6) if re.search(r"\d", k) else ()):
+            try:
+                j = ollama.chat_json(cfg, [{"role": "user", "content": (
+                    f"Kalimat naskah video ini memuat perbandingan yang keliru dengan {pembanding}:\n{k}\n\nTulis ulang "
+                    "dalam bahasa Indonesia dengan gaya yang sama TANPA perbandingan itu: buang pembandingnya, "
+                    "pertahankan semua angka dan fakta lainnya.")}],
+                    {"type": "object", "properties": {"kalimat": {"type": "string"}}, "required": ["kalimat"]},
+                    batal=batal, maks_token=120, suhu=suhu)
+                usul = " ".join(str(j.get("kalimat") or "").split())
+            except (RuntimeError, ValueError):
+                continue
+            kata = set(re.findall(r"\w+", usul.lower()))
+            if usul and not any(w in kata for w in benda) and _angka(k) <= _angka(usul) \
+                    and len(usul.split()) <= len(k.split()) + 3 \
+                    and all(w in dikenal for w in re.findall(r"[\w-]+", usul.lower()) if len(w) >= 5):
+                baru = usul
+                break
+        hasil.append(baru or (k if wajib else ""))
+    return hasil
+
+
 def periksa_fakta(cfg, teks, riset, batal=None, log=print):
     """Kalimat naskah yang memuat angka atau perbandingan dicek model teks terhadap kalimat sumber yang memuat angka
     yang sama. Dulu sumber "began moving north at about 20 cm per year" (dulu) ditulis "bergerak 20 cm per tahun"
@@ -489,6 +686,28 @@ def periksa_fakta(cfg, teks, riset, batal=None, log=print):
             ganti[lama] = paragraf[pi][ki] = baru
             log(f"Keterangan waktu diperbaiki: «{lama}» → «{baru or '(dibuang)'}»")
         periksa = [x for x in periksa if x not in waktu]
+
+    def sebelum(pi, ki):
+        return paragraf[pi][ki - 1] if ki > 0 else (paragraf[pi - 1][-1] if pi > 0 and paragraf[pi - 1] else "")
+    # Perbandingan dengan benda sehari-hari dihitung kode dari angka isian model (_periksa_pembanding).
+    # Tanpa angka di kalimat atau kalimat sebelumnya ("makhluk setinggi gunung") tidak ada yang bisa dihitung.
+    banding = [(pi, ki) for pi, ki in periksa if _BANDING_OBJEK.search(paragraf[pi][ki])
+               and _bilangan(paragraf[pi][ki] + " " + sebelum(pi, ki))]
+    keliru = _periksa_pembanding(cfg, [(paragraf[pi][ki], sebelum(pi, ki)) for pi, ki in banding], batal, log) \
+        if banding else {}
+    if keliru:
+        urut = sorted(keliru)
+        # dua kalimat pertama naskah = hook: kalau gagal ditulis ulang, dibiarkan (hook tanpa kalimat pertama lebih rusak)
+        butir = [(paragraf[pi][ki], keliru[n][1], pi == 0 and ki < 2) for n in urut for pi, ki in [banding[n]]]
+        for n, baru in zip(urut, _tanpa_banding(cfg, butir, batal, dikenal)):
+            pi, ki = banding[n]
+            lama = paragraf[pi][ki]
+            if baru == lama:
+                log(f"Perbandingan keliru ({keliru[n][0]}) di hook, gagal ditulis ulang — dibiarkan: «{lama}»")
+                continue
+            ganti[lama] = paragraf[pi][ki] = baru
+            log(f"Perbandingan keliru ({keliru[n][0]}): «{lama}» → «{baru or '(dibuang)'}»")
+        periksa = [x for x in periksa if x not in {banding[n] for n in keliru}]
     for mulai in range(0, len(periksa), 8):
         if batal:
             batal.cek()
@@ -499,9 +718,9 @@ def periksa_fakta(cfg, teks, riset, batal=None, log=print):
             kutip = _kutipan_sumber(k, sumber)
             # kalimat sebelumnya ikut ditulis: "Angka ini … lebih cepat daripada kuku" merujuk "10 mm per tahun" di
             # kalimat sebelumnya — tanpa itu pemeriksa kadang tidak bisa menghitungnya
-            sebelum = paragraf[pi][ki - 1] if ki > 0 else (paragraf[pi - 1][-1] if pi > 0 and paragraf[pi - 1] else "")
+            konteks = sebelum(pi, ki)
             daftar.append(f"{n + 1}) {k}\n"
-                          + (f"   Kalimat sebelumnya (konteks, tidak diperiksa): {sebelum}\n" if sebelum else "")
+                          + (f"   Kalimat sebelumnya (konteks, tidak diperiksa): {konteks}\n" if konteks else "")
                           + "   Kutipan sumber: "
                           + (" | ".join(x[:300] for x in kutip) if kutip else "(tidak ada angka yang sama di sumber)")
                           + _catatan_waktu(k, kutip))
@@ -1078,8 +1297,10 @@ SCHEMA_CARI = {
                 "properties": {"no": {"type": "integer"}, "a": {"type": "string"}, "b": {"type": "string"},
                                "c": {"type": "string"}, "lihat": {"type": "string"}, "subjek": {"type": "string"},
                                "teks_layar": {"type": "string"}, "analogi": {"type": "string"},
-                               "jumlah": {"type": "integer"}, "latar": {"type": "string"}},
-                "required": ["no", "a", "b", "c", "lihat", "subjek", "teks_layar", "analogi", "jumlah", "latar"],
+                               "analogi_kata": {"type": "string"}, "jumlah": {"type": "integer"},
+                               "latar": {"type": "string"}},
+                "required": ["no", "a", "b", "c", "lihat", "subjek", "teks_layar", "analogi", "analogi_kata", "jumlah",
+                             "latar"],
             },
         }
     },
@@ -1266,6 +1487,9 @@ def kata_kunci_adegan(cfg, judul, adegan, batal=None, log=print, subjek="", arti
             "tiga Menara Eiffel\", \"seberat 50 mobil\", \"cara kerjanya seperti lampu lava\"), tulis benda PEMBANDING "
             "itu dalam bahasa Inggris untuk dicari fotonya, 1-3 kata, misalnya \"African elephant\", \"Olympic swimming "
             "pool\", \"Eiffel Tower\", \"car\", \"lava lamp\". Isi \"\" kalau tidak ada perbandingan.\n"
+            "- analogi_kata: kata pertama benda pembanding itu PERSIS seperti tertulis di narasi adegan (bahasa "
+            "Indonesia), misalnya \"gajah\", \"kolam\", \"Menara\", \"lampu\" — fotonya muncul saat kata itu "
+            "diucapkan. Isi \"\" kalau tidak ada perbandingan.\n"
             "- jumlah: angka pada perbandingan itu sebagai bilangan bulat (1600 untuk \"1.600 gajah\", 3 untuk \"tiga "
             "Menara Eiffel\"); 0 kalau perbandingannya tanpa angka atau tidak ada perbandingan.\n"
             "- latar: klip stock video dalam bahasa Inggris, 2-4 kata umum, untuk LATAR BERGERAK adegan itu: TEMPAT "
@@ -1307,6 +1531,7 @@ def kata_kunci_adegan(cfg, judul, adegan, batal=None, log=print, subjek="", arti
                     analogi = " ".join(str(item.get("analogi") or "").split())[:40]
                     if analogi:
                         hasil[no]["analogi"], hasil[no]["jumlah"] = analogi, max(0, _int(item.get("jumlah")))
+                        hasil[no]["analogi_kata"] = " ".join(str(item.get("analogi_kata") or "").split())[:30]
                     nomor = _int(item.get("artikel"))
                     if 1 <= nomor <= len(artikel):
                         hasil[no]["artikel"] = artikel[nomor - 1]
@@ -1322,7 +1547,7 @@ def kata_kunci_adegan(cfg, judul, adegan, batal=None, log=print, subjek="", arti
                 h["b"] = h.get("latar") or cadangan(fakta)[i % 10]
         elif berhasil:
             dekat = min(berhasil, key=lambda j: (abs(j - i), j > i))  # seri: dahulukan adegan sebelumnya
-            hasil[i] = {**{k: v for k, v in hasil[dekat].items() if k not in ("analogi", "jumlah")},
+            hasil[i] = {**{k: v for k, v in hasil[dekat].items() if k not in ("analogi", "analogi_kata", "jumlah")},
                         "teks_layar": "", "pinjam_q": True}
         else:
             hasil[i] = {"a": "", "b": cadangan(fakta)[i % 10], "c": "", "pinjam_q": True}

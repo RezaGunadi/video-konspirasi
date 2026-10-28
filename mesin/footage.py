@@ -150,21 +150,42 @@ def hewan_lain(k, konteks):
     return not any(_kata_sama(h, w) for h in hewan for w in kata)
 
 
-# Peristiwa di narasi berbahasa Indonesia / isi foto dari juri AI ("gunung api" bukan kebakaran, jadi "api" tidak ikut)
-_PERISTIWA_ID = re.compile(r"\b(tsunami|gempa|badai|topan|siklon|tornado|banjir|kebakaran|terbakar|bencana|kekeringan|"
-                           r"longsor|perang|ledakan|meledak|tabrakan|kecelakaan|letusan|meletus|erupsi)\b", re.I)
+# Jenis peristiwa, Inggris (judul klip, kata kunci) + Indonesia (narasi, isi foto dari juri AI). "gunung api" bukan
+# kebakaran, jadi "api" saja tidak ikut. Letusan gunung api dan ledakan satu kelompok (narasi Krakatau: "ledakan").
+_JENIS_PERISTIWA = {jenis: re.compile(pola, re.I) for jenis, pola in {
+    "badai": r"hurricanes?|cyclones?|typhoons?|\bstorms?\b|tornado(es)?|blizzards?|\bbadai|\btopan|siklon",
+    "banjir": r"\bfloods?\b|flooding|\bbanjir",
+    "tsunami": r"tsunami",
+    "gempa": r"earthquakes?|\bgempa",
+    "kebakaran": r"fires?\b|kebakaran|terbakar",
+    "letusan": r"eruptions?|erupting|explosions?|exploding|letusan|meletus|erupsi|ledakan|meledak",
+    "kekeringan": r"drought|kekeringan",
+    "longsor": r"landslides?|avalanches?|longsor",
+    "perang": r"\bwar\b|\bperang\b",
+    "kecelakaan": r"\bcrash|tabrakan|kecelakaan",
+    "bencana": r"disasters?|\bbencana",
+}.items()}
+
+
+def _jenis_peristiwa(teks):
+    return {jenis for jenis, pola in _JENIS_PERISTIWA.items() if pola.search(teks or "")}
 
 
 def peristiwa_lain(k, konteks):
-    """Klip bencana/peristiwa untuk konteks (narasi + kata kunci + subjek video) yang tidak membahas peristiwa apa
-    pun, dan tidak dinilai tepat oleh juri AI: peta tsunami Tohoku (skor 2, latar 7) pernah jadi latar narasi tekanan
-    di dasar Palung Mariana. Hanya judul dan isi dari juri yang dilihat; deskripsi panjang Wikimedia sering menyebut
-    letusan/ledakan sambil lalu (gunung api bawah laut Kolumbo)."""
+    """Klip bencana/peristiwa yang jenisnya tidak dibahas konteks (narasi + kata kunci + subjek video), dan tidak
+    dinilai tepat oleh juri AI: peta tsunami Tohoku (skor 2, latar 7) pernah jadi latar narasi tekanan di dasar Palung
+    Mariana, klip musim badai NOAA jadi latar gelombang suara letusan Krakatau. Hanya judul dan isi dari juri yang
+    dilihat; deskripsi panjang Wikimedia sering menyebut letusan/ledakan sambil lalu (gunung api bawah laut Kolumbo).
+    "Bencana" umum di judul cocok dengan peristiwa apa pun di konteks."""
     if k.get("jenis") != "video" or ((k.get("skor_ai") or 0) >= SKOR_BAGUS and not k.get("pinjam")):
         return False
-    if not (PERISTIWA.search(k.get("judul") or "") or _PERISTIWA_ID.search(k.get("isi_ai") or "")):
+    klip = _jenis_peristiwa(f"{k.get('judul') or ''} {k.get('isi_ai') or ''}")
+    if not klip:
         return False
-    return not (PERISTIWA.search(konteks or "") or _PERISTIWA_ID.search(konteks or ""))
+    ada = _jenis_peristiwa(konteks)
+    if not ada:
+        return True
+    return not (klip & ada or "bencana" in klip or "bencana" in ada)
 
 
 def arsip_tak_relevan(k, narasi):

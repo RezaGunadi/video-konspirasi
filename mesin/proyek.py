@@ -737,6 +737,11 @@ def _siapkan_satu_foto(p, a, cfg, batal, judul_video):
         log(p, "  🆚 foto perbandingan tidak ketemu — adegan ini memakai footage biasa")
 
 
+def _isi_salah(k, narasi):
+    """Klip yang isinya pasti salah untuk narasi ini (orang, hewan lain, peristiwa lain), bukan sekadar lemah."""
+    return footage.orang_tak_relevan(k, narasi) or footage.hewan_lain(k, narasi) or footage.peristiwa_lain(k, narasi)
+
+
 def _klip_layak(k, cek=True, latar="", narasi=""):
     """Klip boleh jadi latar shot: latarnya cocok menurut AI, klip latar cadangan yang judulnya menyebut tempatnya,
     atau pinjaman yang lolos _boleh_dipinjam. Dicek ulang tiap kali direncanakan: pinjaman dari rencana lama dulu
@@ -747,8 +752,7 @@ def _klip_layak(k, cek=True, latar="", narasi=""):
         return True
     if k.get("judul_cocok") is False:  # judulnya ditolak _saring_judul
         return False
-    if narasi and (footage.orang_tak_relevan(k, narasi) or footage.hewan_lain(k, narasi)
-                   or footage.peristiwa_lain(k, narasi)):
+    if narasi and _isi_salah(k, narasi):
         return False
     if k.get("pinjam"):
         return _boleh_dipinjam(k, cek, latar)
@@ -787,11 +791,13 @@ def _boleh_dipinjam(k, cek=True, latar=""):
     return lat >= (footage.LATAR_ASING if k.get("setopik") is False else footage.LATAR_JELAS)
 
 
-def _kandidat_baru(kand, dipakai, sudah_dipakai, di_adegan_ini):
-    """Kandidat terbaik yang belum dipakai — juga bukan foto kembar dari sumber lain (versi crop/resize)."""
+def _kandidat_baru(kand, dipakai, sudah_dipakai, di_adegan_ini, tolak=None):
+    """Kandidat terbaik yang belum dipakai — juga bukan foto kembar dari sumber lain (versi crop/resize).
+    tolak(k) = True: isinya pasti salah untuk adegan ini (lihat _isi_salah), tidak dipakai walaupun pilihan terakhir."""
     # kandidat analogi hanya untuk stiker tumpukan (foto pejabat untuk "telapak tangan" pernah tampil layar penuh)
     belum = [j for j, k in enumerate(kand) if (footage.identitas(k) not in dipakai or k.get("pinjam"))
-             and not k.get("analogi") and not k.get("gagal") and k.get("judul_cocok") is not False]
+             and not k.get("analogi") and not k.get("gagal") and k.get("judul_cocok") is not False
+             and not (tolak and tolak(k))]
     # Urutan pilihan: TEPAT menurut AI (≥ SKOR_BAGUS) → gambar tepat yang sudah tampil di adegan ini diulang
     # (gerak kamera beda) → setema (5-6) → belum dinilai → sisanya. Lebih baik mengulang gambar yang tepat daripada
     # menampilkan gambar yang tidak nyambung dengan narasi.
@@ -1071,9 +1077,7 @@ def _rencana_video(p, a, i, frames_adegan, ketat=True):
             for s in b.get("shots", []):
                 kb = (b.get("kandidat") or [])[s["pilih"]] if s.get("pilih") is not None and \
                     s["pilih"] < len(b.get("kandidat") or []) else None
-                if not (kb and kb["jenis"] == "video" and not kb.get("gagal")
-                        and not footage.orang_tak_relevan(kb, konteks) and not footage.hewan_lain(kb, konteks)
-                        and not footage.peristiwa_lain(kb, konteks)
+                if not (kb and kb["jenis"] == "video" and not kb.get("gagal") and not _isi_salah(kb, konteks)
                         and len(pakai.get(footage.identitas(kb), ())) < footage.maks_bagian(kb, durasi_shot)):
                     continue
                 kb = {x: v for x, v in kb.items() if x != "pinjam_subjek"}  # izin adegan lain tidak ikut
@@ -1176,7 +1180,10 @@ def _rencana_video(p, a, i, frames_adegan, ketat=True):
         if j is None and cek and not shots:
             j = ambil_klip(boleh_lalu=True)  # lanjutkan klip penutup adegan sebelumnya (potongan lain)
         if j is None:
-            j = _kandidat_baru(kand, dipakai, sudah_dipakai, [s["pilih"] for s in shots])
+            # Pilihan terakhir boleh lemah, tapi tidak boleh salah isi: rencana tidak ketat dulu mengisi shot pertama
+            # narasi gelombang suara Krakatau dengan klip musim badai NOAA.
+            j = _kandidat_baru(kand, dipakai, sudah_dipakai, [s["pilih"] for s in shots],
+                               tolak=lambda k: cek and _isi_salah(k, konteks))
             # Sisa kandidat yang dinilai tidak nyambung (pohon kelapa & jalan kota untuk narasi dasar Palung Mariana):
             # klip sebelumnya diperpanjang saja, walaupun jadi satu take panjang. Shot pertama dibiarkan kosong supaya
             # _rencanakan mencari klip tempat dulu.

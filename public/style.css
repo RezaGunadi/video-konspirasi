@@ -139,3 +139,10 @@ select { min-width: 0; max-width: 100%; text-overflow: ellipsis; }
 .proyek .unduh { margin: 8px 0 0; font-size: 13px; }
 .proyek.terunduh { opacity: .6; }
 .proyek.terunduh .lencana.selesai { color: var(--redup); }
+
+
+/* tombol unduh + tandai di list & modal */
+.proyek .aksi-unduh { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.proyek .aksi-unduh .unduh { margin: 0; }
+.proyek .unduh-link button { margin: 0; }
+button.tandai-aktif { color: var(--hijau); border-color: var(--hijau); }

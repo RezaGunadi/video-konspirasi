@@ -300,7 +300,7 @@ async function muatDaftar() {
       const gbr = p.status === 'selesai' && p.hasil?.thumbnail ? `style="background-image:url('/hasil/${p.id}/thumbnail?${encodeURIComponent(p.hasil.durasi)}')"` : '';
       const ikon = gbr ? '' : ({ selesai: '🎬', gagal: '⚠️', dibatalkan: '⏹️', cek_naskah: '📝', jalan: '⏳' }[p.status] || '🕒');
       const langkah = p.status === 'jalan' && p.langkah ? `${LANGKAH[p.langkah]} · ` : '';
-      const unduh = tabAktif === 'selesai' ? `<label class="cek unduh"><input type="checkbox" data-unduh="${p.id}" ${p.diunduh ? 'checked' : ''}> ${p.diunduh ? 'Sudah diunduh' : 'Tandai sudah diunduh'}</label>` : '';
+      const unduh = tabAktif === 'selesai' ? `<div class="aksi-unduh">${p.hasil?.video ? `<a class="unduh-link" href="/hasil/${p.id}/video" download><button class="kecil">⬇️ Unduh video</button></a>` : ''}<label class="cek unduh"><input type="checkbox" data-unduh="${p.id}" ${p.diunduh ? 'checked' : ''}> ${p.diunduh ? 'Sudah diunduh' : 'Tandai sudah diunduh'}</label></div>` : '';
       const jenis = tabAktif === 'selesai' ? `<span class="tag">${p.induk ? '📱 Reels' : '🖥️ Video panjang'}</span> ` : '';
       return `<div class="proyek${tabAktif === 'selesai' && p.diunduh ? ' terunduh' : ''}" data-id="${p.id}">
         <div class="gbr" ${gbr}>${ikon}</div>
@@ -313,7 +313,7 @@ async function muatDaftar() {
     }).join('');
   } catch (err) { /* server sedang sibuk; coba lagi di putaran berikutnya */ }
 }
-$('#daftarProyek').addEventListener('click', (e) => { if (e.target.closest('.unduh')) return; const el = e.target.closest('.proyek'); if (el) bukaDetail(el.dataset.id); });
+$('#daftarProyek').addEventListener('click', (e) => { if (e.target.closest('.unduh') || e.target.closest('a')) return; const el = e.target.closest('.proyek'); if (el) bukaDetail(el.dataset.id); });
 $('#daftarProyek').addEventListener('change', async (e) => { const cb = e.target.closest('[data-unduh]'); if (!cb) return; try { await api('/api/proyek/' + cb.dataset.unduh + '/unduh', { body: { nilai: cb.checked } }); } catch {} muatDaftar(); });
 $('#segTab').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; tabAktif = b.dataset.v; pilihSeg('#segTab', tabAktif); muatDaftar(); });
 $('#segUnduh').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; filterUnduh = b.dataset.v; pilihSeg('#segUnduh', filterUnduh); muatDaftar(); });
@@ -372,7 +372,7 @@ function htmlDetail(p) {
   const v = selesai ? `<video controls preload="metadata" ${poster} src="/hasil/${p.id}/video?v=${versi}"></video>` : '';
   const m = p.meta || {};
   const aksi = [];
-  if (selesai) aksi.push('<button data-a="buka-folder">📂 Buka folder hasil</button>', `<a href="/hasil/${p.id}/video" download><button>⬇️ Unduh video</button></a>`);
+  if (selesai) aksi.push('<button data-a="buka-folder">📂 Buka folder hasil</button>', `<a href="/hasil/${p.id}/video" download><button>⬇️ Unduh video</button></a>`, `<button data-a="unduh" class="${p.diunduh ? 'tandai-aktif' : ''}">${p.diunduh ? '✅ Sudah diunduh — klik untuk batal' : '⬇️ Tandai sudah diunduh'}</button>`);
   if (p.status === 'cek_naskah') aksi.push('<button class="utama" style="width:auto;margin:0" data-a="lanjut">▶️ Naskah oke, lanjut buat video</button>');
   if (['gagal', 'dibatalkan'].includes(p.status)) aksi.push('<button data-a="ulangi">🔁 Coba lagi</button>');
   if (p.status === 'selesai') aksi.push(`<button data-a="ulangi" ${p.perubahan ? 'class="utama" style="width:auto;margin:0"' : ''}>🔁 Render ulang</button>`);
@@ -509,6 +509,7 @@ $('#dIsi').addEventListener('click', async (e) => {
         jalur = 'tulis-ulang';
       }
       if (a === 'link') body = { link: $('#dLink').value.trim() };
+      if (a === 'unduh') body = { nilai: !(proyekDetail || {}).diunduh };
       if (a === 'ganti-suara') {
         jalur = 'ulangi';
         body = { opsi: { suara: $('#dSuara').value } };

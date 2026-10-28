@@ -281,27 +281,42 @@ $$('[data-tutup]').forEach((b) => b.addEventListener('click', () => { b.closest(
 
 // ---------------------------------------------------------------- daftar proyek
 let daftarCache = [];
+let tabAktif = 'semua';
+let filterUnduh = 'semua';
 async function muatDaftar() {
   try {
     const { proyek } = await api('/api/proyek');
     daftarCache = proyek;
     $('#jumlahProyek').textContent = proyek.length ? `(${proyek.length})` : '';
-    if (!proyek.length) { $('#daftarProyek').innerHTML = '<p class="bantu">Belum ada proyek.</p>'; return; }
-    $('#daftarProyek').innerHTML = proyek.map((p) => {
+    $('#barisUnduh').hidden = tabAktif !== 'selesai';
+    let daftar = proyek;
+    if (tabAktif === 'selesai') {
+      daftar = proyek.filter((p) => p.status === 'selesai');
+      if (filterUnduh === 'sudah') daftar = daftar.filter((p) => p.diunduh);
+      else if (filterUnduh === 'belum') daftar = daftar.filter((p) => !p.diunduh);
+    }
+    if (!daftar.length) { $('#daftarProyek').innerHTML = `<p class="bantu">${tabAktif === 'selesai' ? 'Belum ada video selesai di filter ini.' : 'Belum ada proyek.'}</p>`; return; }
+    $('#daftarProyek').innerHTML = daftar.map((p) => {
       const gbr = p.status === 'selesai' && p.hasil?.thumbnail ? `style="background-image:url('/hasil/${p.id}/thumbnail?${encodeURIComponent(p.hasil.durasi)}')"` : '';
       const ikon = gbr ? '' : ({ selesai: '🎬', gagal: '⚠️', dibatalkan: '⏹️', cek_naskah: '📝', jalan: '⏳' }[p.status] || '🕒');
       const langkah = p.status === 'jalan' && p.langkah ? `${LANGKAH[p.langkah]} · ` : '';
-      return `<div class="proyek" data-id="${p.id}">
+      const unduh = tabAktif === 'selesai' ? `<label class="cek unduh"><input type="checkbox" data-unduh="${p.id}" ${p.diunduh ? 'checked' : ''}> ${p.diunduh ? 'Sudah diunduh' : 'Tandai sudah diunduh'}</label>` : '';
+      const jenis = tabAktif === 'selesai' ? `<span class="tag">${p.induk ? '📱 Reels' : '🖥️ Video panjang'}</span> ` : '';
+      return `<div class="proyek${tabAktif === 'selesai' && p.diunduh ? ' terunduh' : ''}" data-id="${p.id}">
         <div class="gbr" ${gbr}>${ikon}</div>
-        <div><div class="nama">${esc(p.judul || p.nama)}</div>
+        <div><div class="nama">${jenis}${esc(p.judul || p.nama)}</div>
           <div class="pesan">${esc(labelFormat(p.opsi))} · ${langkah}${esc(p.galat || p.pesan || '')}</div>
-          ${['jalan', 'antri'].includes(p.status) ? `<div class="bar"><i style="width:${p.progres}%"></i></div>` : ''}</div>
+          ${['jalan', 'antri'].includes(p.status) ? `<div class="bar"><i style="width:${p.progres}%"></i></div>` : ''}
+          ${unduh}</div>
         <span class="lencana ${p.status}">${STATUS[p.status] || p.status}${p.status === 'jalan' ? ' ' + p.progres + '%' : ''}${p.perubahan ? ' · perlu render' : ''}</span>
       </div>`;
     }).join('');
   } catch (err) { /* server sedang sibuk; coba lagi di putaran berikutnya */ }
 }
-$('#daftarProyek').addEventListener('click', (e) => { const el = e.target.closest('.proyek'); if (el) bukaDetail(el.dataset.id); });
+$('#daftarProyek').addEventListener('click', (e) => { if (e.target.closest('.unduh')) return; const el = e.target.closest('.proyek'); if (el) bukaDetail(el.dataset.id); });
+$('#daftarProyek').addEventListener('change', async (e) => { const cb = e.target.closest('[data-unduh]'); if (!cb) return; try { await api('/api/proyek/' + cb.dataset.unduh + '/unduh', { body: { nilai: cb.checked } }); } catch {} muatDaftar(); });
+$('#segTab').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; tabAktif = b.dataset.v; pilihSeg('#segTab', tabAktif); muatDaftar(); });
+$('#segUnduh').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; filterUnduh = b.dataset.v; pilihSeg('#segUnduh', filterUnduh); muatDaftar(); });
 
 // ---------------------------------------------------------------- detail proyek
 let detailId = null;

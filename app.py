@@ -204,6 +204,8 @@ def aksi(pid, aksi):
         tujuan = folder / nama
         f.save(tujuan)
         proyek.pilih_footage(pid, int(request.form["adegan"]), int(request.form["shot"]), file_lokal=str(tujuan))
+    elif aksi == "unduh":
+        proyek.tandai_unduh(pid, bool(data.get("nilai", True)))
     elif aksi == "batal":
         proyek.batalkan(pid)
     elif aksi == "hapus":

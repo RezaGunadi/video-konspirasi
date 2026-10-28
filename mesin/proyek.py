@@ -135,7 +135,7 @@ def daftar():
     with _lock:
         semua = sorted(_proyek.values(), key=lambda p: p["dibuat"], reverse=True)
         return [{k: p.get(k) for k in ("id", "dibuat", "nama", "status", "langkah", "progres", "pesan", "galat",
-                                        "hasil", "opsi", "perubahan")} | {"judul": p.get("meta", {}).get("judul", "")}
+                                        "hasil", "opsi", "perubahan", "induk", "diunduh")} | {"judul": p.get("meta", {}).get("judul", "")}
                 for p in semua]
 
 
@@ -397,6 +397,15 @@ def batalkan(pid):
         if p["status"] in ("antri", "cek_naskah"):
             p["status"] = "dibatalkan"
             p["pesan"] = "Dibatalkan"
+    _simpan(p, paksa=True)
+
+
+def tandai_unduh(pid, nilai):
+    with _lock:
+        p = _proyek.get(pid)
+        if not p:
+            return
+        p["diunduh"] = bool(nilai)
     _simpan(p, paksa=True)
 
 

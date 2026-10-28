@@ -130,3 +130,12 @@ main > * { min-width: 0; }
 select { min-width: 0; max-width: 100%; text-overflow: ellipsis; }
 .seg button { white-space: normal; min-width: 0; line-height: 1.25; }
 .proyek { grid-template-columns: 96px minmax(0, 1fr) auto; }
+
+
+/* tab Selesai & unduhan */
+#barisUnduh { margin-top: 8px; }
+#segUnduh button { font-size: 13px; padding: 7px 6px; }
+.proyek .tag { font-size: 11px; padding: 1px 7px; border: 1px solid var(--garis); border-radius: 99px; color: var(--redup); margin-right: 6px; white-space: nowrap; }
+.proyek .unduh { margin: 8px 0 0; font-size: 13px; }
+.proyek.terunduh { opacity: .6; }
+.proyek.terunduh .lencana.selesai { color: var(--redup); }

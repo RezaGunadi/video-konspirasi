@@ -229,7 +229,10 @@ def bacakan(teks, suara, kecepatan, nada, batal=None):
     if mp3.exists() and meta.exists():
         return json.loads(meta.read_text(encoding="utf-8"))
     galat = None
-    for coba in range(4):
+    # Jeda antar-percobaan makin panjang supaya naskah tetap jadi walau internet ngadat beberapa menit
+    # (dulu 4x ~36 detik total; blip DNS/jaringan sempat menggagalkan video yang naskah+footage-nya sudah jadi).
+    tunggu = [10, 20, 40, 60, 60, 60]  # toleransi jaringan ±4 menit, di luar batas waktu tiap percobaan
+    for coba in range(len(tunggu) + 1):
         if batal:
             batal.cek()
         try:
@@ -247,7 +250,16 @@ def bacakan(teks, suara, kecepatan, nada, batal=None):
         except Exception as e:  # jaringan/limit Microsoft/menggantung: tunggu lalu coba lagi
             galat = e
             mp3.unlink(missing_ok=True)
-            time.sleep(3 + coba * 4)
+            if coba >= len(tunggu):
+                break
+            log(f"Suara gagal ({str(e)[:80]}); tunggu {tunggu[coba]} detik lalu coba lagi "
+                f"({coba + 2}/{len(tunggu) + 1})")
+            sisa = tunggu[coba]
+            while sisa > 0:  # tetap responsif terhadap pembatalan selama menunggu
+                if batal:
+                    batal.cek()
+                time.sleep(min(3, sisa))
+                sisa -= 3
     raise RuntimeError(f"Edge TTS gagal (cek internet): {galat}")
 
 

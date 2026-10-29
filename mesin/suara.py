@@ -252,8 +252,6 @@ def bacakan(teks, suara, kecepatan, nada, batal=None):
             mp3.unlink(missing_ok=True)
             if coba >= len(tunggu):
                 break
-            log(f"Suara gagal ({str(e)[:80]}); tunggu {tunggu[coba]} detik lalu coba lagi "
-                f"({coba + 2}/{len(tunggu) + 1})")
             sisa = tunggu[coba]
             while sisa > 0:  # tetap responsif terhadap pembatalan selama menunggu
                 if batal:

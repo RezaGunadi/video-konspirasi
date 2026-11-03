@@ -2066,10 +2066,16 @@ def _footage_recreate(p):
     s = rc["sumber"]
     src = _proyek.get(s.get("id") or "") if s["jenis"] == "proyek" else None
     dapat = 0
-    for a in p["adegan"]:
+    for ia, a in enumerate(p["adegan"]):
         if a.get("kandidat"):
             continue
         cocok = recreate.cocokkan(a["teks"], tr)
+        if not cocok and not src and tr:
+            # Tak ada padanan semantik: tetap pakai potongan VIDEO SUMBER berdasarkan posisi adegan (bukan stock).
+            # User minta footage short murni dari videonya sendiri.
+            pos = int(round(ia / max(1, len(p["adegan"])) * len(tr)))
+            i0 = max(0, min(pos, len(tr) - 1))
+            cocok = (i0, min(len(tr) - 1, i0 + 1), 0)
         if not cocok:
             continue
         if src:
@@ -2092,7 +2098,7 @@ def _footage_recreate(p):
             a["kandidat"] = [k]
             dapat += 1
     log(p, f"{dapat} dari {len(p['adegan'])} adegan memakai visual dari video sumber"
-           + ("" if dapat == len(p["adegan"]) else "; sisanya dicari dari sumber footage biasa"))
+           + ("" if dapat == len(p["adegan"]) or src else "; sisanya dicari dari sumber footage biasa"))
 
 
 def _waktu(detik):

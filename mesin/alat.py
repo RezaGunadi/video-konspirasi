@@ -184,12 +184,36 @@ def _tunggu_giliran(url):
         _terakhir[situs] = time.time()
 
 
+def _ambil_batas(url, batas, kw):
+    """Jalankan _sesi.get di thread terpisah dengan batas waktu KERAS. Timeout requests tidak selalu membatasi
+    resolusi DNS yang macet (getaddrinfo), jadi tanpa ini satu permintaan bisa menggantung berjam-jam dan
+    membekukan seluruh antrean. Thread daemon yang ditinggalkan akan mati sendiri saat proses berakhir."""
+    kotak = {}
+
+    def _kerja():
+        try:
+            kotak["r"] = _sesi.get(url, **kw)
+        except BaseException as e:  # simpan apa pun, dilempar ulang di pemanggil
+            kotak["e"] = e
+
+    t = threading.Thread(target=_kerja, daemon=True)
+    t.start()
+    t.join(batas)
+    if t.is_alive():
+        raise requests.exceptions.Timeout(f"permintaan menggantung > {batas:.0f}s: {url}")
+    if "e" in kotak:
+        raise kotak["e"]
+    return kotak["r"]
+
+
 def http_get(url, ulang=4, **kw):
     kw.setdefault("timeout", 30)
+    to = kw.get("timeout") or 30
+    batas = (to if isinstance(to, (int, float)) else 30) + 15  # batas keras wall-clock, lebih longgar dari timeout requests
     for coba in range(ulang):
         try:
             _tunggu_giliran(url)
-            r = _sesi.get(url, **kw)
+            r = _ambil_batas(url, batas, kw)
             if (r.status_code == 429 or r.status_code >= 500) and coba < ulang - 1:
                 saran = r.headers.get("retry-after", "")
                 time.sleep(min(20, int(saran)) if saran.isdigit() else 3 + coba * 4)

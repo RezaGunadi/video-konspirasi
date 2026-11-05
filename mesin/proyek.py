@@ -24,7 +24,7 @@ from .alat import (INPUT, OUTPUT, PROYEK, Batal, Dibatalkan, baca_json, ffmpeg, 
 LANGKAH = ["riset", "naskah", "adegan", "suara", "footage", "render"]
 BOBOT = {"riset": 5, "naskah": 20, "adegan": 10, "suara": 10, "footage": 35, "render": 20}
 OPSI_KUNCI = ["mode", "format", "durasi", "suara", "kecepatan", "nada", "subtitle", "musik", "volume_musik",
-              "cek_gambar", "cek_naskah", "riset", "gaya", "isi_layar", "disclaimer", "teks_disclaimer", "gaya_naskah", "cta",
+              "cek_gambar", "gen_gambar", "cek_naskah", "riset", "gaya", "isi_layar", "disclaimer", "teks_disclaimer", "gaya_naskah", "cta",
               "jumlah_reels", "durasi_reels", "cta_reels", "suara_alami", "animasi", "visual", "maskot"]
 
 _lock = threading.RLock()
@@ -84,7 +84,7 @@ def _opsi_bersih(opsi):
     bawaan = config.muat()["default"]
     hasil = {k: opsi.get(k, bawaan[k]) for k in OPSI_KUNCI}
     hasil["format"] = hasil["format"] if hasil["format"] in ("16:9", "keduanya") else "9:16"
-    hasil["mode"] = hasil["mode"] if hasil["mode"] in ("bacakan", "ringkas", "teaser", "recreate") else "tulis"
+    hasil["mode"] = hasil["mode"] if hasil["mode"] in ("bacakan", "ringkas", "teaser", "recreate", "edit_folder") else "tulis"
     hasil["kembar"] = bool(opsi.get("kembar"))  # proyek 16:9 yang nanti membuat reels 9:16-nya
     hasil["jumlah_reels"] = max(1, min(5, int(hasil["jumlah_reels"])))
     hasil["durasi_reels"] = max(20, min(90, int(hasil["durasi_reels"])))
@@ -129,6 +129,17 @@ def buat(teks, opsi, nama=None, ekstra=None):
     _simpan(p, paksa=True)
     _bangun.set()
     return p
+
+
+def buat_editfolder(folder, judul, tutup_broll, opsi):
+    """Proyek 'Edit folder → 1 video': folder berisi klip mentah, dirangkai jadi 1 video matang (lihat editfolder.py)."""
+    folder = str(folder)
+    if not os.path.isdir(folder):
+        raise ValueError("Folder tidak ditemukan")
+    opsi = {**opsi, "mode": "edit_folder", "format": "16:9", "kembar": False}
+    nama = (judul or os.path.basename(folder.rstrip("/\\")) or "Edit folder")[:80]
+    return buat(f"Edit folder: {nama}", opsi, nama=nama,
+                ekstra={"edit": {"folder": folder, "judul": judul or nama, "tutup_broll": bool(tutup_broll)}})
 
 
 def daftar():
@@ -1402,6 +1413,23 @@ def _lengkapi_artikel(p, teks_adegan, q):
         log(p, f"{ditandai} adegan membahas bukti/artikel tertentu — footage-nya diambil dari artikel itu")
 
 
+def _gambar_ai_jika_perlu(p, a, o, batal):
+    """Adegan tanpa satu pun gambar stok yang benar-benar cocok (skor AI ≥ SKOR_BAGUS): buat satu ilustrasi AI
+    (Pollinations) dari deskripsi visual adegan, supaya tidak jatuh ke footage off-topic. Hanya MENAMBAH satu
+    kandidat ber-skor tinggi di depan; footage stok lainnya tetap jadi cadangan tombol Ganti."""
+    kand = a.get("kandidat") or []
+    if any(k.get("jenis") == "gambar" and (k.get("skor_ai") or 0) >= footage.SKOR_BAGUS and not k.get("gen")
+           for k in kand):
+        return  # sudah ada gambar stok yang pas
+    q = a.get("q") or {}
+    prompt = (q.get("lihat") or q.get("a") or " ".join(x for x in (q.get("subjek"), q.get("b")) if x)).strip()
+    if not prompt:
+        return  # adegan abstrak tanpa target visual: biarkan jadi latar saja
+    g = footage.gen_gambar(prompt, o["format"], batal=batal, log=lambda t: log(p, t))
+    if g:
+        a["kandidat"] = ([g] + kand)[:22]
+
+
 def l_footage(p, cfg, batal):
     o = p["opsi"]
     n = len(p["adegan"])
@@ -1459,6 +1487,8 @@ def l_footage(p, cfg, batal):
                 kand = footage.kandidat_analogi(cfg, a["q"]["analogi"], a["teks"], o["cek_gambar"], batal,
                                                 log=lambda t: log(p, t))[:2] + kand
             a["kandidat"] = kand[:22]
+            if o.get("gen_gambar", True) and o["cek_gambar"]:
+                _gambar_ai_jika_perlu(p, a, o, batal)
         if a.get("banding") and not a["banding"].get("siap"):
             _siapkan_banding(p, a, cfg, batal, judul_video)
         frames_adegan = int(round(a["durasi"] * render.FPS))
@@ -2139,6 +2169,16 @@ def kerjakan(p):
         p["status"] = "jalan"
         p["galat"] = ""
     try:
+        if p["opsi"]["mode"] == "edit_folder":
+            from . import editfolder
+            p["langkah"] = "edit"
+            _progres(p, "render", 0.1)
+            editfolder.proses(p, cfg, batal, log=lambda t: log(p, t))
+            with _lock:
+                p["status"] = "selesai"
+                p["progres"] = 100
+                p["langkah"] = ""
+            return
         for langkah in LANGKAH:
             if langkah in p["selesai"]:
                 continue

@@ -18,7 +18,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from urllib.parse import unquote, urlencode
+from urllib.parse import quote, unquote, urlencode
 
 import requests
 
@@ -50,8 +50,8 @@ BUKAN_SUBJEK = re.compile(
     r"universal studios|water ?park|wahana|taman hiburan|souvenir|suvenir|"
     r"merchandise|t-shirt|keychain|plush|\blego\b|\btoys?\b|mainan|costume|cosplay|"
     r"mascot|maskot|restaurant|restoran|\bcafe\b|\bhotel\b|\bmotel\b|\bshop\b|"
-    r"\bstore\b|\btoko\b|billboard|\bbus\b|\btram\b|parade|mural|graffiti|grafiti|poster|\bfilm\b|"
-    r"\bmovie\b|trailer|swimming|\bpool\b|kolam renang|fishing tackle|tackle shop|\bbrand\b|\blogo\b|"
+    r"\bstore\b|\btoko\b|billboard|\bbus\b|\btram\b|parade|mural|graffiti|grafiti|poster|"
+    r"swimming|\bpool\b|kolam renang|fishing tackle|tackle shop|\bbrand\b|\blogo\b|"
     # foto pribadi/keluarga (Openverse/Flickr: "Landon With Giant Painted Pig" lolos sebagai "bukti raksasa")
     r"\bbaby\b|\bbabies\b|toddler|newborn|\bkids?\b|\bchild(ren)?\b|selfie|birthday|wedding|\bfamily\b|vacation|"
     r"my (son|daughter|wife|husband|dog|cat)|grandson|granddaughter|\bbayi\b|ulang tahun|"
@@ -1189,6 +1189,15 @@ def nilai_heuristik(k, format_video, terpakai, subjek=(), video=False):
 def thumb_lokal(k):
     """Unduh thumbnail kecil (dipakai AI untuk melihat & ditampilkan di GUI). Kandidat yang bendanya sudah dipotong
     dari latar (stiker analogi) dilihat AI sebagai potongannya di atas latar abu terang — persis yang akan tampil."""
+    if k.get("file_lokal") and Path(k["file_lokal"]).exists():  # gambar AI (Pollinations): sudah ada di disk
+        tujuan = F_THUMB / f"{hash_pendek(k['id'])}.jpg"
+        if not tujuan.exists():
+            try:
+                ffmpeg(["-i", k["file_lokal"], "-frames:v", "1", "-vf", "scale='min(512,iw)':-2", "-q:v", "4",
+                        str(tujuan)], timeout=60)
+            except RuntimeError:
+                return None
+        return tujuan
     if k.get("potongan") and Path(k["potongan"]).exists():
         tujuan = F_THUMB / f"potong-{hash_pendek(k['potongan'])}.jpg"
         if not tujuan.exists():
@@ -1724,6 +1733,48 @@ def detik_hitam(f, mulai=0.0, durasi=None):
     except (OSError, subprocess.TimeoutExpired):
         return 0.0
     return sum(float(d) for d in re.findall(r"black_duration:([\d.]+)", r.stderr.decode("utf-8", "replace")))
+
+
+POLLINATIONS = "https://image.pollinations.ai/prompt/"
+_GAYA_GEN = ("photorealistic, cinematic documentary still, natural lighting, highly detailed, sharp focus, "
+             "no text, no caption, no watermark, no logo")
+
+
+def gen_gambar(prompt, format_video, batal=None, log=print):
+    """Buat satu gambar ilustrasi lewat Pollinations.ai (gratis, tanpa API key) untuk adegan yang tidak punya
+    footage stok yang cocok, supaya tidak jatuh ke gambar off-topic. Gambar diunduh ke cache aset dengan nama yang
+    SAMA seperti yang nanti dicari siapkan(), jadi tidak diunduh dua kali. Ringan (satu permintaan HTTP, tidak butuh
+    GPU lokal). Mengembalikan kandidat ber-skor tinggi, atau None kalau gagal."""
+    prompt = " ".join((prompt or "").split())
+    if len(prompt) < 4:
+        return None
+    w, h = (1080, 1920) if format_video == "9:16" else (1920, 1080)
+    kid = f"gen-{hash_pendek(prompt + format_video)}"
+    url = (POLLINATIONS + quote(f"{prompt}, {_GAYA_GEN}"[:400]) +
+           f"?width={w}&height={h}&nologo=true&model=flux&seed={int(hash_pendek(prompt), 16) % 100000}")
+    tujuan = F_ASET / f"{hash_pendek(kid)}.img"   # nama berkas yang dicari siapkan() untuk kandidat ini
+    try:
+        f = unduh(url, tujuan, batas_mb=12, batal=batal)
+    except Dibatalkan:
+        raise
+    except Exception as e:
+        log(f"  Generate gambar gagal: {e}")
+        return None
+    if not f:
+        log("  Generate gambar gagal (tidak terunduh)")
+        return None
+    try:
+        info = probe(f)
+    except RuntimeError:
+        return None
+    if not info["video"] or info["lebar"] < 300:
+        return None
+    log(f"  🎨 Gambar AI dibuat: “{prompt[:60]}”")
+    return {"id": kid, "sumber": "AI (Pollinations)", "jenis": "gambar", "url": url, "file_lokal": str(f),
+            "thumb": url, "teks": prompt[:200], "judul": prompt[:120], "isi_ai": prompt[:120],
+            "lebar": info["lebar"], "tinggi": info["tinggi"], "lisensi": "AI-generated (Pollinations, flux)",
+            "pembuat": "Pollinations.ai", "halaman": "https://pollinations.ai",
+            "skor_ai": SKOR_BAGUS + 1, "skor_latar": LATAR_BAGUS, "gen": True}
 
 
 def siapkan(k, durasi, batal=None, bagian=0):

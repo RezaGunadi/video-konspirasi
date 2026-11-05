@@ -32,6 +32,7 @@ BAWAAN = {
         "musik": True,          # acak dari folder musik/ kalau ada isinya
         "volume_musik": 12,     # persen
         "cek_gambar": True,     # AI melihat kandidat footage lalu memilih yang paling pas
+        "gen_gambar": True,     # adegan tanpa footage stok yang cocok: buat ilustrasi AI (Pollinations, tanpa API key)
         "cek_naskah": False,    # berhenti dulu agar naskah bisa diperiksa/diedit
         "riset": True,          # ambil fakta dari Wikipedia sebelum menulis
         "gaya": "misterius",    # misterius = gelap, grain, vignette; cerah = dokumenter terang + tulisan besar; natural

@@ -18,15 +18,18 @@ const BANTU_MODE = {
   tulis: 'Tulis topik atau catatan (boleh singkat, misal "Teori Area 51"). AI riset fakta, menulis naskah, lalu jadi video.',
   bacakan: 'Tempel naskah yang sudah jadi. Teks dibacakan apa adanya, AI hanya mencari footage yang pas.',
   recreate: 'Buat beberapa short portrait dari SATU video panjang: naskah ditulis ulang per tema, suara dibacakan ulang dan disamakan dengan video sumbernya.',
+  edit_folder: 'Upload satu FOLDER berisi klip mentah. AI memilih bagian penting, menyusun utama→sampingan, dan merangkai jadi 1 video matang (audio asli, tanpa narasi tambahan). Klip portrait dipisah sebagai bahan Reels.',
 };
 const PLACEHOLDER = {
   tulis: 'Contoh:\nMisteri Insiden Roswell 1947 — benarkah yang jatuh itu UFO?\n\nAtau catatan bebas: poin-poin yang mau dibahas, sudut pandang, dsb.',
   bacakan: 'Tempel naskah lengkap di sini…',
   recreate: '',
+  edit_folder: '',
 };
 
 const form = { mode: 'tulis', format: '9:16' };
 let fileTerpilih = [];
+let efFiles = [];
 let statusTerakhir = null;
 
 // ---------------------------------------------------------------- status & setelan
@@ -75,14 +78,20 @@ function ubahMode() {
   $('#bantuMode').textContent = BANTU_MODE[form.mode];
   $('#teks').placeholder = PLACEHOLDER[form.mode];
   const rc = form.mode === 'recreate';
+  const ef = form.mode === 'edit_folder';
   $('#kolomDurasi').style.display = form.mode === 'tulis' ? '' : 'none';
   $('#kolomGayaNaskah').style.display = form.mode === 'tulis' ? '' : 'none';
-  $('#kolomTopik').hidden = rc;
-  $('#kolomFormat').hidden = rc;
+  $('#kolomTopik').hidden = rc || ef;
+  $('#kolomFormat').hidden = rc || ef;
   $('#kolomRecreate').hidden = !rc;
+  $('#kolomEditFolder').hidden = !ef;
   if (rc) { $('#kolomReels').hidden = true; muatSumberRecreate(); }
+  if (ef) $('#kolomReels').hidden = true;
   $('#riset').closest('label').style.display = form.mode === 'tulis' ? '' : 'none';
   $('#cek_naskah').closest('label').style.display = form.mode === 'tulis' ? '' : 'none';
+  // mode edit_folder: audio asli, tak perlu opsi suara/lanjutan/disclaimer
+  [$('#suara').closest('.grid2'), $('#kecepatan').closest('.grid2'), $('#suara_alami').closest('label'),
+   ...document.querySelectorAll('#formBaru > details')].forEach((el) => { if (el) el.style.display = ef ? 'none' : ''; });
   perbaruiInfo();
 }
 
@@ -191,6 +200,12 @@ $('#gaya_naskah').addEventListener('change', () => {
 });
 $('#btnDisclaimerBawaan').addEventListener('click', () => { $('#teks_disclaimer').value = statusTerakhir?.disclaimer_bawaan || ''; });
 $('#segMode').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; form.mode = b.dataset.v; pilihSeg('#segMode', form.mode); ubahMode(); });
+$('#efFolder').addEventListener('change', (e) => {
+  const vid = /\.(mp4|mov|mkv|webm|avi|m4v)$/i;
+  efFiles = [...(e.target.files || [])].filter((f) => vid.test(f.name));
+  const mb = efFiles.reduce((s, f) => s + f.size, 0) / 1048576;
+  $('#efInfoFile').textContent = efFiles.length ? `${efFiles.length} video (${mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : Math.round(mb) + ' MB'})` : 'Tidak ada video di folder itu';
+});
 $('#segFormat').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; form.format = b.dataset.v; pilihSeg('#segFormat', form.format); perbaruiInfo(); });
 ['durasi', 'cek_gambar', 'jumlah_reels', 'durasi_reels'].forEach((k) => $('#' + k).addEventListener('change', perbaruiInfo));
 $('#teks').addEventListener('input', () => { if (form.mode === 'bacakan') perbaruiInfo(); });
@@ -227,6 +242,24 @@ $('#btnContoh').addEventListener('click', async () => {
 $('#btnBuat').addEventListener('click', async () => {
   const b = $('#btnBuat');
   const teks = $('#teks').value.trim();
+  if (form.mode === 'edit_folder') {
+    if (!efFiles.length) { $('#infoBuat').textContent = 'Pilih folder klip dulu.'; return; }
+    b.disabled = true;
+    $('#infoBuat').textContent = `Mengunggah ${efFiles.length} klip… (folder besar bisa lama, jangan tutup halaman)`;
+    try {
+      const fd = new FormData();
+      efFiles.forEach((f) => fd.append('file', f));
+      fd.append('judul', $('#efJudul').value.trim());
+      fd.append('tutup_broll', $('#efTutup').checked ? '1' : '0');
+      fd.append('opsi', JSON.stringify(opsiForm()));
+      const r = await api('/api/editfolder', { body: fd });
+      efFiles = []; $('#efFolder').value = ''; $('#efInfoFile').textContent = 'Belum ada folder';
+      $('#infoBuat').textContent = `✓ ${r.jumlah} klip diunggah, video sedang dibuat.`;
+      muatDaftar();
+    } catch (err) { $('#infoBuat').textContent = 'Gagal: ' + err.message; }
+    b.disabled = false;
+    return;
+  }
   if (form.mode === 'recreate') {
     b.disabled = true;
     try {

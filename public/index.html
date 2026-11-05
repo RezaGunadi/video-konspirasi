@@ -21,6 +21,7 @@
       <button data-v="tulis" class="aktif">🤖 AI tulis naskah</button>
       <button data-v="bacakan">📜 Bacakan teks saya</button>
       <button data-v="recreate">♻️ Re-create video panjang</button>
+      <button data-v="edit_folder">✂️ Edit folder → 1 video</button>
     </div>
     <p class="bantu" id="bantuMode"></p>
     <div id="kolomGayaNaskah">
@@ -92,6 +93,23 @@
       <p class="bantu">Naskah tiap short ditulis ulang dari isi video sumber sesuai temanya, lalu dibacakan ulang.
         Visualnya diambil dari bagian video sumber yang membahas hal yang sama. Video dari aplikasi ini memakai
         foto aslinya (tanpa subtitle lama), dan suaranya sama persis dengan video panjangnya.</p>
+    </div>
+
+    <div id="kolomEditFolder" hidden>
+      <label class="judul-kolom">Pilih FOLDER berisi klip mentah (semua video di dalamnya diproses)</label>
+      <div class="baris">
+        <label class="tombol-file">📁 Pilih folder klip
+          <input type="file" id="efFolder" webkitdirectory directory multiple hidden>
+        </label>
+        <span class="bantu" id="efInfoFile">Belum ada folder</span>
+      </div>
+      <label class="judul-kolom" for="efJudul">Judul video (jadi nama file hasil)</label>
+      <input id="efJudul" placeholder="mis. Review Ben Sinar">
+      <label class="cek"><input type="checkbox" id="efTutup" checked> Sisakan b-roll sunyi ±14 detik di akhir (buat dubbing closing sendiri)</label>
+      <p class="bantu">Klip <b>landscape</b> dirangkai jadi 1 video matang: AI memilih bagian penting dari ucapan di
+        video, disusun dari hal utama ke sampingan, dipotong tepat di akhir kata dengan transisi halus, audio asli
+        dipertahankan (tanpa narasi tambahan). Klip <b>portrait</b> dipisah otomatis sebagai bahan Reels. Upload
+        folder besar butuh waktu.</p>
     </div>
 
     <div id="kolomFormat">

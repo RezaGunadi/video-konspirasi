@@ -1,4 +1,5 @@
 """Video Konspirasi AI — server lokal (http://localhost:3220)."""
+import datetime as dt
 import ipaddress
 import json
 import os
@@ -143,6 +144,32 @@ def recreate_buat():
     except ValueError as e:
         abort(400, str(e))
     return jsonify(ok=True, id=[p["id"] for p in hasil])
+
+
+@app.post("/api/editfolder")
+def editfolder_buat():
+    """Upload satu folder klip mentah (webkitdirectory) → proyek 'Edit folder → 1 video matang'."""
+    berkas = request.files.getlist("file")
+    if not berkas:
+        abort(400, "Tidak ada file video")
+    judul = (request.form.get("judul") or "").strip()
+    tutup = request.form.get("tutup_broll", "1") == "1"
+    ekst = (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v")
+    nama_folder = slug(judul or "edit", 50) + "-" + dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    tujuan = SUMBER / "editfolder" / nama_folder
+    tujuan.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for f in berkas:
+        asal = Path(f.filename or "")
+        if asal.suffix.lower() not in ekst:
+            continue
+        f.save(tujuan / asal.name)   # simpan dgn basename (abaikan subfolder dari webkitdirectory)
+        n += 1
+    if not n:
+        abort(400, "Tidak ada file video yang didukung (mp4/mov/mkv/webm)")
+    opsi = json.loads(request.form.get("opsi") or "{}")
+    p = proyek.buat_editfolder(str(tujuan), judul, tutup, opsi)
+    return jsonify(ok=True, id=p["id"], jumlah=n)
 
 
 @app.post("/api/proyek/upload")

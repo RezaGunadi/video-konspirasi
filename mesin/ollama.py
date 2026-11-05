@@ -100,8 +100,42 @@ def _calon_json(mentah):
                 yield diperbaiki
 
 
+def _tutup_terpotong(t):
+    """JSON terpotong (mis. num_predict habis): potong ke penutup kurung terakhir yang lengkap,
+    lalu tutup kurung yang masih terbuka — jadi elemen separuh/angka separuh dibuang, bukan dikarang."""
+    awal = [x for x in (t.find("{"), t.find("[")) if x >= 0]
+    if not awal:
+        return
+    s = t[min(awal):]
+    stack, in_str, esc, batas = [], False, False, []
+    for j, c in enumerate(s):
+        if in_str:
+            if esc: esc = False
+            elif c == "\\": esc = True
+            elif c == '"': in_str = False
+            continue
+        if c == '"':
+            in_str = True
+        elif c in "{[":
+            stack.append(c)
+        elif c in "}]":
+            if stack: stack.pop()
+            batas.append((j + 1, tuple(stack)))   # titik aman: tepat setelah satu struktur selesai
+    for pos, st in list(reversed(batas))[:80]:
+        if not st:                 # sudah tertutup penuh -> biar kandidat biasa yang tangani
+            continue
+        kepala = s[:pos].rstrip().rstrip(",")
+        yield kepala + "".join("}" if x == "{" else "]" for x in reversed(st))
+
+
 def _urai_json(mentah):
     for calon in _calon_json(mentah):
+        try:
+            return json.loads(calon)
+        except json.JSONDecodeError:
+            continue
+    bersih = _FENCE.sub("", (mentah or "").strip()).strip()
+    for calon in _tutup_terpotong(bersih):
         try:
             return json.loads(calon)
         except json.JSONDecodeError:

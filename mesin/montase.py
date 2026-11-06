@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """Montase highlight → 1 video dari folder klip b-roll / drone (TANPA transkrip, TANPA narasi tambahan).
 
-Cocok untuk footage tanpa omongan penting (drone, aerial, b-roll, timelapse). Beda dari editfolder.py yang
-memotong di sekitar UCAPAN: di sini tiap klip dinilai VISUAL-nya — ketajaman (blurdetect), eksposur
-(signalstats YAVG), gerak (YDIF), dan potongan keras (scdet) — lalu diambil jendela paling bagus per klip,
-dipotong pendek (±4-5 dtk), divariasikan antarklip (maksimal 1-2 potongan/klip → banyak sudut berbeda),
-disambung crossfade, diurut kronologis (nama file DJI = urut waktu). CPU-only (tanpa GPU): analisis pakai
-resolusi kecil + frame jarang supaya ringan.
+Cocok untuk footage tanpa omongan penting (drone, aerial, b-roll, timelapse, vlog jalan-jalan). Beda dari
+editfolder.py yang memotong di sekitar UCAPAN: di sini tiap klip dinilai VISUAL-nya pakai OpenCV —
+kecerahan (buang gelap/over), ketajaman (Laplacian var), warna (colorfulness), dan oklusi (lensa ketutup
+jari/tangan atau bidang kosong besar) — lalu diambil jendela paling bagus per klip, dipotong pendek
+(±4-5 dtk), 1 potongan/klip (banyak sudut berbeda), shot kembar dibuang via dHash, disambung crossfade,
+diurut kronologis (nama file = urut waktu). CPU-only (tanpa GPU): analisis pakai frame kecil + seek jarang.
 
 Audio: klip dipertahankan apa adanya (ambient) di-crossfade; kalau folder musik/ ada isinya, dilapisi musik
 (ambient diturunkan). Tidak ada transkrip Whisper → jauh lebih cepat dari editfolder untuk footage sepi.
@@ -18,6 +18,13 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import numpy as np
+try:
+    import cv2
+    _CV = True
+except Exception:                                        # cv2 hanya perlu di laptop (montase laptop-only)
+    _CV = False
+
 from .alat import FFMPEG, FFPROBE, MUSIK, OUTPUT, slug
 from .editfolder import _durof, _portrait, _probe
 
@@ -25,88 +32,102 @@ FPS = 30
 VID = (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v")
 MUS = (".mp3", ".m4a", ".aac", ".wav", ".ogg", ".opus", ".flac")
 
-ANALYZE_W = 200       # lebar frame analisis (kecil = ringan, cukup untuk blur/eksposur)
-SAMPLE_FPS = 2        # frame/detik yang didecode di tiap titik sampel
-PROBE = 1.0           # lama decode tiap titik sampel (detik) — diseek cepat lewat -ss
-MAXN = 24             # maksimal titik sampel per klip (batasi biaya untuk klip panjang)
-MINN = 5              # minimal titik sampel per klip
-EDGE = 1.0            # buang sekian detik di awal & akhir klip (take-off / gimbal settle / mendarat)
+AW, AH = 256, 144     # ukuran frame analisis (kecil = ringan, cukup untuk metrik + hash)
+MINN, MAXN = 6, 14    # titik sampel per klip (batasi biaya untuk klip panjang)
+EDGE = 1.0            # buang sekian detik di awal & akhir klip (settle / transisi)
 WIN = 4.5             # panjang tiap potongan (detik)
 TRANS = 0.6           # crossfade antarpotongan (detik)
-FLOOR = 0.45          # skor minimal agar sebuah klip ikut (di bawah ini = buram/gelap, dibuang)
-MINSEG = 8            # kalau footage jelek semua, tetap ambil sekian potongan terbaik
+FLOOR = 0.40          # skor minimal agar sebuah klip ikut (di bawah = buang)
+MINSEG = 10           # kalau footage jelek semua, tetap ambil sekian potongan terbaik
+DARK = 48.0           # rata-rata luma < ini = terlalu gelap (dibuang) — mis. malam / kamar gelap
+BRIGHT = 230.0        # rata-rata luma > ini = over/blown (dibuang)
+DEDUP_HAM = 10        # jarak Hamming dHash < ini = shot mirip (buang duplikat → variasi)
 
 
-# ---------------------------------------------------------------- analisis visual (sampling seek)
-# Footage drone biasanya 4K/1080p HEVC: men-decode SEMUA frame lambat. Jadi kita SEEK cepat (-ss sebelum
-# -i, lompat ke keyframe) ke beberapa titik lalu decode ~1 detik saja di tiap titik → ratusan kali lebih
-# ringan, tak peduli klip sepanjang apa. Metrik yang andal per-frame: ketajaman (blurdetect, kecil=tajam),
-# eksposur (YAVG), dan warna (SATAVG). Gerak tidak dipakai karena tak terukur andal dari sampel pendek.
-def _probe_titik(clip, center):
-    """Seek ke `center`, decode ~PROBE detik → rata-rata {blur, yavg, sat} atau None."""
-    cmd = [FFMPEG, "-hide_banner", "-nostats", "-ss", f"{max(0.0, center):.2f}", "-i", str(clip),
-           "-t", f"{PROBE:.2f}",
-           "-vf", (f"scale={ANALYZE_W}:-2,format=yuv420p,fps={SAMPLE_FPS},"
-                   f"blurdetect,signalstats,metadata=print:file=-"),
-           "-an", "-f", "null", "-"]
+# ---------------------------------------------------------------- analisis visual (OpenCV)
+# Footage 4K/1080p HEVC: decode SEMUA frame lambat. Jadi kita SEEK cepat (-ss sebelum -i) ke beberapa
+# titik dan ambil 1 frame kecil tiap titik → ringan tak peduli klip sepanjang apa. Tiap frame dinilai
+# pakai OpenCV: kecerahan (buang gelap/over), ketajaman (Laplacian var), warna (colorfulness), oklusi
+# (lensa ketutup jari/tangan atau bidang kosong besar), plus dHash untuk membuang shot kembar.
+def _grab(clip, t):
+    """Seek cepat ke detik t, ambil 1 frame AWxAH BGR (numpy) atau None."""
+    cmd = [FFMPEG, "-hide_banner", "-loglevel", "error", "-ss", f"{max(0.0, t):.2f}",
+           "-i", str(clip), "-frames:v", "1", "-vf", f"scale={AW}:{AH}",
+           "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
     try:
-        out = subprocess.run(cmd, capture_output=True, text=True, timeout=60).stdout
+        buf = subprocess.run(cmd, capture_output=True, timeout=40).stdout
     except Exception:
         return None
-    blur = yavg = sat = 0.0; n = 0
-    cb = cy = cs = None
-    def simpan():
-        nonlocal blur, yavg, sat, n, cb, cy, cs
-        if cb is not None and cy is not None:
-            blur += cb; yavg += cy; sat += (cs or 0.0); n += 1
-        cb = cy = cs = None
-    for ln in out.splitlines():
-        ln = ln.strip()
-        if ln.startswith("frame:"):
-            simpan()
-        elif "=" in ln:
-            k, _, v = ln.partition("=")
-            try: fv = float(v)
-            except ValueError: continue
-            if k == "lavfi.blur": cb = fv
-            elif k == "lavfi.signalstats.YAVG": cy = fv
-            elif k == "lavfi.signalstats.SATAVG": cs = fv
-    simpan()
-    if not n:
+    if len(buf) < AW * AH * 3:
         return None
-    return {"blur": blur / n, "yavg": yavg / n, "sat": sat / n}
+    return np.frombuffer(buf[:AW * AH * 3], np.uint8).reshape(AH, AW, 3)
 
 
-def _nilai(m):
-    """Metrik rata-rata satu titik → (skor 0..1, detail). Tinggi = tajam, eksposur pas, berwarna."""
-    blur, yavg, sat = m["blur"], m["yavg"], m["sat"]
-    sharp = 1.0 / (1.0 + blur / 8.0)                     # blur 5→0.62, 10→0.44, 25→0.24
-    expo = max(0.0, 1.0 - abs(yavg - 130.0) / 110.0)     # ideal ±130; gelap/over → 0
-    satb = min(1.0, sat / 55.0)                          # bonus warna (hazy ~5 → 0.09)
-    skor = 0.55 * sharp + 0.30 * expo + 0.15 * satb
-    return skor, {"blur": round(blur, 1), "yavg": round(yavg), "sat": round(sat, 1),
-                  "sharp": round(sharp, 2), "expo": round(expo, 2)}
+def _metrik(bgr):
+    """Frame BGR → metrik visual (kecerahan, ketajaman, warna, oklusi, dHash)."""
+    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    bright = float(gray.mean())
+    detail = float(cv2.Laplacian(gray, cv2.CV_64F).var())        # tinggi = tajam/berdetail
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+    H, S, V = hsv[:, :, 0].astype(int), hsv[:, :, 1].astype(int), hsv[:, :, 2].astype(int)
+    skin = (H <= 25) & (S >= 40) & (S <= 190) & (V >= 60)        # kulit (jari/tangan di lensa)
+    gy, gx = 4, 4; hh, ww = AH // gy, AW // gx; dead = smooth_skin = 0
+    for j in range(gy):
+        for i in range(gx):
+            c = gray[j * hh:(j + 1) * hh, i * ww:(i + 1) * ww]
+            d = float(cv2.Laplacian(c, cv2.CV_64F).var())
+            if d < 12.0:                                         # sel nyaris tanpa detail (kosong)
+                dead += 1
+            if d < 60.0 and skin[j * hh:(j + 1) * hh, i * ww:(i + 1) * ww].mean() > 0.6:
+                smooth_skin += 1                                 # sel mulus & dominan kulit = ketutup
+    occluded = dead / 16.0 >= 0.30 or smooth_skin / 16.0 >= 0.19
+    B, G, R = [bgr[:, :, k].astype(np.float32) for k in (0, 1, 2)]
+    rg = R - G; yb = 0.5 * (R + G) - B                           # colorfulness Hasler-Süsstrunk
+    colorful = float(np.sqrt(rg.std() ** 2 + yb.std() ** 2) + 0.3 * np.sqrt(rg.mean() ** 2 + yb.mean() ** 2))
+    g2 = cv2.resize(gray, (9, 8)); bits = (g2[:, 1:] > g2[:, :-1]).flatten()  # dHash 64-bit
+    h = 0
+    for b in bits:
+        h = (h << 1) | int(b)
+    return {"bright": bright, "detail": detail, "colorful": colorful, "occluded": occluded, "hash": h}
+
+
+def _skor(m):
+    """Metrik → skor 0..1. Gate keras: gelap/over/oklusi = 0. Lain: tajam + eksposur + warna."""
+    b = m["bright"]
+    if b < DARK or b > BRIGHT:                           # terlalu gelap / over → buang
+        return 0.0
+    if m["occluded"]:                                    # lensa ketutup / bidang kosong besar → buang
+        return 0.05
+    sharp = float(np.clip((m["detail"] - 150.0) / 1200.0, 0.0, 1.0))
+    expo = (float(np.clip((b - 40.0) / 55.0, 0.0, 1.0)) if b < 95.0
+            else float(np.clip((230.0 - b) / 100.0, 0.0, 1.0)))
+    color = float(np.clip((m["colorful"] - 8.0) / 40.0, 0.0, 1.0))
+    return 0.45 * sharp + 0.25 * expo + 0.30 * color
+
+
+def _hamming(a, b):
+    return bin(a ^ b).count("1")
 
 
 def _jendela_terbaik(clip, dur, batal=None):
-    """Sampel beberapa titik (seek cepat) → (start, skor, detail) jendela WIN terbaik."""
+    """Sampel beberapa titik (seek cepat) → (start, skor, metrik) jendela WIN terbaik, atau m=None."""
     lo = EDGE
     hi = dur - EDGE - WIN
     if hi <= lo:                                         # klip pendek: satu jendela di tengah
         s = max(0.0, (dur - min(WIN, dur)) / 2.0)
-        m = _probe_titik(clip, s + min(WIN, dur) / 2.0)
-        if not m: return s, 0.0, {}
-        skor, det = _nilai(m); return s, skor, det
+        fr = _grab(clip, s + min(WIN, dur) / 2.0)
+        if fr is None: return s, 0.0, None
+        m = _metrik(fr); return s, _skor(m), m
     n = max(MINN, min(MAXN, int((hi - lo) / WIN) + 1))
-    terbaik = (lo, -1.0, {})
+    terbaik = (lo, -1.0, None)
     for i in range(n):
         if batal: batal.cek()
         s = lo + (hi - lo) * i / (n - 1)
-        m = _probe_titik(clip, s + WIN / 2.0)
-        if not m: continue
-        skor, det = _nilai(m)
+        fr = _grab(clip, s + WIN / 2.0)
+        if fr is None: continue
+        m = _metrik(fr); skor = _skor(m)
         if skor > terbaik[1]:
-            terbaik = (s, skor, det)
+            terbaik = (s, skor, m)
     return terbaik
 
 
@@ -216,6 +237,8 @@ def _render(segmen, out, fmt, log, batal=None):
 
 # ---------------------------------------------------------------- entri utama
 def proses(p, cfg, batal, log):
+    if not _CV:
+        raise RuntimeError("OpenCV (cv2) tidak tersedia — montase butuh analisis visual")
     e = p["montase"]
     folder = Path(e["folder"])
     fmt = e.get("format") or "16:9"
@@ -240,33 +263,43 @@ def proses(p, cfg, batal, log):
     log(f"{len(files)} klip, {len(cocok)} dipakai untuk montase {fmt} (target ~{int(target)} dtk)")
 
     # nilai tiap klip (jendela terbaiknya)
-    log("Menilai visual tiap klip (ketajaman / eksposur / warna)…")
+    log("Menilai visual tiap klip (ketajaman / eksposur / warna / oklusi)…")
     kand = []
     for idx, (f, d) in enumerate(cocok):
         if batal: batal.cek()
-        start, skor, det = _jendela_terbaik(f, d, batal)
-        if not det:
+        start, skor, m = _jendela_terbaik(f, d, batal)
+        if m is None:
             continue
-        kand.append({"clip": f, "urut": idx, "start": start, "skor": skor, "det": det})
+        kand.append({"clip": f, "urut": idx, "start": start, "skor": skor, "m": m})
         log(f"  [{idx+1}/{len(cocok)}] {f.name}: skor {skor:.2f} "
-            f"(blur {det.get('blur')}, terang {det.get('yavg')}, warna {det.get('sat')})")
+            f"(terang {int(m['bright'])}, detail {int(m['detail'])}, warna {m['colorful']:.0f}"
+            f"{', KETUTUP' if m['occluded'] else ''})")
     if not kand:
         raise RuntimeError("Semua klip gagal dianalisis")
 
-    # pilih: ambil jendela terbaik tiap klip dulu (variasi sudut maksimal), urut skor; isi sampai target.
-    # Buang klip yang kelewat buram/gelap (skor < FLOOR) walau montase jadi lebih pendek — lebih baik 3 menit
-    # shot bagus daripada menyelipkan klip jelek. Kalau footage jelek SEMUA, tetap ambil yang terbaik.
+    # pilih: satu jendela terbaik per klip (variasi sudut maksimal), urut skor, isi sampai target.
+    # Gate keras membuang shot gelap/over/ketutup (skor≈0); FLOOR membuang shot lemah; dHash membuang
+    # shot kembar (mis. meja/bathtub yang sama berkali-kali) → lebih baik 3 menit rapi daripada menyelip
+    # klip jelek/berulang. Kalau footage jelek SEMUA, FLOOR dilonggarkan supaya tetap ada hasil.
     kand.sort(key=lambda k: k["skor"], reverse=True)
     perlu = max(1, int(round(target / (WIN - TRANS))))
-    layak = [k for k in kand if k["skor"] >= FLOOR]
-    if len(layak) < min(MINSEG, len(kand)):
-        layak = kand[:min(MINSEG, len(kand))]
-    dibuang = len(kand) - len(layak)
-    if dibuang:
-        log(f"  {dibuang} klip dibuang karena buram/gelap (skor < {FLOOR})")
-    pilih = layak[:perlu]
-    if len(pilih) < perlu:                               # klip layak habis → biarkan apa adanya
-        log(f"  klip layak hanya {len(pilih)}, montase akan lebih pendek dari target")
+    floor = FLOOR
+    if len([k for k in kand if k["skor"] >= FLOOR and not k["m"]["occluded"]]) < min(MINSEG, len(kand)):
+        floor = 0.0                                      # footage jelek semua → jangan kosong
+    pilih = []; b_gate = b_floor = b_dup = 0
+    for k in kand:
+        if len(pilih) >= perlu:
+            break
+        if k["skor"] <= 0.05 or k["m"]["occluded"]:      # gelap / over / lensa ketutup
+            b_gate += 1; continue
+        if k["skor"] < floor:
+            b_floor += 1; continue
+        if any(_hamming(k["m"]["hash"], q["m"]["hash"]) <= DEDUP_HAM for q in pilih):
+            b_dup += 1; continue                         # shot mirip yang sudah dipilih
+        pilih.append(k)
+    if not pilih:                                        # pengaman terakhir
+        pilih = kand[:min(MINSEG, len(kand))]
+    log(f"  dibuang: {b_gate} gelap/ketutup, {b_floor} skor<{floor:.2f}, {b_dup} mirip (duplikat)")
     rata = sum(k["skor"] for k in pilih) / len(pilih)
     log(f"Dipilih {len(pilih)} potongan (skor rata-rata {rata:.2f}) dari {len(kand)} klip")
 

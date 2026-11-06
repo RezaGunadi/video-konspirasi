@@ -84,7 +84,7 @@ def _opsi_bersih(opsi):
     bawaan = config.muat()["default"]
     hasil = {k: opsi.get(k, bawaan[k]) for k in OPSI_KUNCI}
     hasil["format"] = hasil["format"] if hasil["format"] in ("16:9", "keduanya") else "9:16"
-    hasil["mode"] = hasil["mode"] if hasil["mode"] in ("bacakan", "ringkas", "teaser", "recreate", "edit_folder") else "tulis"
+    hasil["mode"] = hasil["mode"] if hasil["mode"] in ("bacakan", "ringkas", "teaser", "recreate", "edit_folder", "montase") else "tulis"
     hasil["kembar"] = bool(opsi.get("kembar"))  # proyek 16:9 yang nanti membuat reels 9:16-nya
     hasil["jumlah_reels"] = max(1, min(5, int(hasil["jumlah_reels"])))
     hasil["durasi_reels"] = max(20, min(90, int(hasil["durasi_reels"])))
@@ -140,6 +140,20 @@ def buat_editfolder(folder, judul, tutup_broll, opsi):
     nama = (judul or os.path.basename(folder.rstrip("/\\")) or "Edit folder")[:80]
     return buat(f"Edit folder: {nama}", opsi, nama=nama,
                 ekstra={"edit": {"folder": folder, "judul": judul or nama, "tutup_broll": bool(tutup_broll)}})
+
+
+def buat_montase(folder, judul, format, durasi, opsi):
+    """Proyek 'Montase highlight': folder klip b-roll/drone → 1 video highlight berbasis kualitas visual
+    (tanpa transkrip), lihat montase.py. Cocok untuk footage tanpa narasi (drone, aerial, timelapse)."""
+    folder = str(folder)
+    if not os.path.isdir(folder):
+        raise ValueError("Folder tidak ditemukan")
+    fmt = format if format in ("16:9", "9:16") else "16:9"
+    durasi = max(30, min(900, int(durasi or 240)))
+    opsi = {**opsi, "mode": "montase", "format": fmt, "kembar": False}
+    nama = (judul or os.path.basename(folder.rstrip("/\\")) or "Montase")[:80]
+    return buat(f"Montase: {nama}", opsi, nama=nama,
+                ekstra={"montase": {"folder": folder, "judul": judul or nama, "format": fmt, "durasi": durasi}})
 
 
 def daftar():
@@ -2174,6 +2188,16 @@ def kerjakan(p):
             p["langkah"] = "edit"
             _progres(p, "render", 0.1)
             editfolder.proses(p, cfg, batal, log=lambda t: log(p, t))
+            with _lock:
+                p["status"] = "selesai"
+                p["progres"] = 100
+                p["langkah"] = ""
+            return
+        if p["opsi"]["mode"] == "montase":
+            from . import montase
+            p["langkah"] = "montase"
+            _progres(p, "render", 0.1)
+            montase.proses(p, cfg, batal, log=lambda t: log(p, t))
             with _lock:
                 p["status"] = "selesai"
                 p["progres"] = 100

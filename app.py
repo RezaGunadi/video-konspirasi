@@ -172,6 +172,36 @@ def editfolder_buat():
     return jsonify(ok=True, id=p["id"], jumlah=n)
 
 
+@app.post("/api/montase")
+def montase_buat():
+    """Upload satu folder klip b-roll/drone (webkitdirectory) → proyek 'Montase highlight'."""
+    berkas = request.files.getlist("file")
+    if not berkas:
+        abort(400, "Tidak ada file video")
+    judul = (request.form.get("judul") or "").strip()
+    fmt = request.form.get("format", "16:9")
+    try:
+        durasi = int(request.form.get("durasi") or 240)
+    except ValueError:
+        durasi = 240
+    ekst = (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v")
+    nama_folder = slug(judul or "montase", 50) + "-" + dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    tujuan = SUMBER / "montase" / nama_folder
+    tujuan.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for f in berkas:
+        asal = Path(f.filename or "")
+        if asal.suffix.lower() not in ekst:
+            continue
+        f.save(tujuan / asal.name)   # simpan dgn basename (abaikan subfolder dari webkitdirectory)
+        n += 1
+    if not n:
+        abort(400, "Tidak ada file video yang didukung (mp4/mov/mkv/webm)")
+    opsi = json.loads(request.form.get("opsi") or "{}")
+    p = proyek.buat_montase(str(tujuan), judul, fmt, durasi, opsi)
+    return jsonify(ok=True, id=p["id"], jumlah=n)
+
+
 @app.post("/api/proyek/upload")
 def buat_dari_file():
     opsi = json.loads(request.form.get("opsi") or "{}")

@@ -22,6 +22,7 @@
       <button data-v="bacakan">📜 Bacakan teks saya</button>
       <button data-v="recreate">♻️ Re-create video panjang</button>
       <button data-v="edit_folder">✂️ Edit folder → 1 video</button>
+      <button data-v="montase">🎞️ Montase highlight (drone/b-roll)</button>
     </div>
     <p class="bantu" id="bantuMode"></p>
     <div id="kolomGayaNaskah">
@@ -110,6 +111,41 @@
         video, disusun dari hal utama ke sampingan, dipotong tepat di akhir kata dengan transisi halus, audio asli
         dipertahankan (tanpa narasi tambahan). Klip <b>portrait</b> dipisah otomatis sebagai bahan Reels. Upload
         folder besar butuh waktu.</p>
+    </div>
+
+    <div id="kolomMontase" hidden>
+      <label class="judul-kolom">Pilih FOLDER berisi klip b-roll / drone (tanpa narasi)</label>
+      <div class="baris">
+        <label class="tombol-file">📁 Pilih folder klip
+          <input type="file" id="moFolder" webkitdirectory directory multiple hidden>
+        </label>
+        <span class="bantu" id="moInfoFile">Belum ada folder</span>
+      </div>
+      <label class="judul-kolom" for="moJudul">Judul video (jadi nama file hasil)</label>
+      <input id="moJudul" placeholder="mis. Merlion Park Highlight">
+      <div class="grid2">
+        <div>
+          <label class="judul-kolom">Format</label>
+          <div class="seg" id="segMoFormat">
+            <button data-v="16:9" class="aktif">🖥️ Landscape 16:9</button>
+            <button data-v="9:16">📱 Portrait 9:16</button>
+          </div>
+        </div>
+        <div>
+          <label class="judul-kolom" for="moDurasi">Panjang montase</label>
+          <select id="moDurasi">
+            <option value="120">± 2 menit</option>
+            <option value="180">± 3 menit</option>
+            <option value="240" selected>± 4 menit</option>
+            <option value="300">± 5 menit</option>
+            <option value="420">± 7 menit</option>
+          </select>
+        </div>
+      </div>
+      <p class="bantu">Untuk footage <b>tanpa omongan penting</b> (drone, aerial, timelapse): tiap klip dinilai
+        visualnya — <b>ketajaman, eksposur, dan gerak</b> — lalu diambil bagian terbaiknya (±4-5 detik), dipilih
+        yang paling bagus dari sebanyak mungkin klip (variasi sudut), disambung transisi halus. Jauh lebih cepat
+        dari "Edit folder" karena tanpa transkrip. Kalau folder <code>musik/</code> ada isinya, dilapisi musik.</p>
     </div>
 
     <div id="kolomFormat">

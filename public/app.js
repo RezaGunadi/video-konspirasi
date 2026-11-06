@@ -19,17 +19,21 @@ const BANTU_MODE = {
   bacakan: 'Tempel naskah yang sudah jadi. Teks dibacakan apa adanya, AI hanya mencari footage yang pas.',
   recreate: 'Buat beberapa short portrait dari SATU video panjang: naskah ditulis ulang per tema, suara dibacakan ulang dan disamakan dengan video sumbernya.',
   edit_folder: 'Upload satu FOLDER berisi klip mentah. AI memilih bagian penting, menyusun utama→sampingan, dan merangkai jadi 1 video matang (audio asli, tanpa narasi tambahan). Klip portrait dipisah sebagai bahan Reels.',
+  montase: 'Untuk footage TANPA narasi (drone, aerial, b-roll). Tiap klip dinilai visualnya (ketajaman, eksposur, gerak), diambil bagian terbaik ±4-5 detik dari sebanyak mungkin klip (variasi sudut), disambung jadi 1 video highlight. Tanpa transkrip → cepat.',
 };
 const PLACEHOLDER = {
   tulis: 'Contoh:\nMisteri Insiden Roswell 1947 — benarkah yang jatuh itu UFO?\n\nAtau catatan bebas: poin-poin yang mau dibahas, sudut pandang, dsb.',
   bacakan: 'Tempel naskah lengkap di sini…',
   recreate: '',
   edit_folder: '',
+  montase: '',
 };
 
 const form = { mode: 'tulis', format: '9:16' };
 let fileTerpilih = [];
 let efFiles = [];
+let moFiles = [];
+let moFormat = '16:9';
 let statusTerakhir = null;
 
 // ---------------------------------------------------------------- status & setelan
@@ -79,19 +83,22 @@ function ubahMode() {
   $('#teks').placeholder = PLACEHOLDER[form.mode];
   const rc = form.mode === 'recreate';
   const ef = form.mode === 'edit_folder';
+  const mo = form.mode === 'montase';
+  const polos = ef || mo;   // mode folder tanpa narasi: tak butuh opsi suara/topik/reels
   $('#kolomDurasi').style.display = form.mode === 'tulis' ? '' : 'none';
   $('#kolomGayaNaskah').style.display = form.mode === 'tulis' ? '' : 'none';
-  $('#kolomTopik').hidden = rc || ef;
-  $('#kolomFormat').hidden = rc || ef;
+  $('#kolomTopik').hidden = rc || polos;
+  $('#kolomFormat').hidden = rc || polos;
   $('#kolomRecreate').hidden = !rc;
   $('#kolomEditFolder').hidden = !ef;
+  $('#kolomMontase').hidden = !mo;
   if (rc) { $('#kolomReels').hidden = true; muatSumberRecreate(); }
-  if (ef) $('#kolomReels').hidden = true;
+  if (polos) $('#kolomReels').hidden = true;
   $('#riset').closest('label').style.display = form.mode === 'tulis' ? '' : 'none';
   $('#cek_naskah').closest('label').style.display = form.mode === 'tulis' ? '' : 'none';
-  // mode edit_folder: audio asli, tak perlu opsi suara/lanjutan/disclaimer
+  // mode edit_folder / montase: audio asli, tak perlu opsi suara/lanjutan/disclaimer
   [$('#suara').closest('.grid2'), $('#kecepatan').closest('.grid2'), $('#suara_alami').closest('label'),
-   ...document.querySelectorAll('#formBaru > details')].forEach((el) => { if (el) el.style.display = ef ? 'none' : ''; });
+   ...document.querySelectorAll('#formBaru > details')].forEach((el) => { if (el) el.style.display = polos ? 'none' : ''; });
   perbaruiInfo();
 }
 
@@ -162,7 +169,9 @@ function perbaruiInfo() {
   const detikVideo = kata / 2.2;
   const cek = $('#cek_gambar').checked;
   const info = [];
-  $('#kolomReels').hidden = form.format !== 'keduanya';
+  const polos = form.mode === 'edit_folder' || form.mode === 'montase' || form.mode === 'recreate';
+  $('#kolomReels').hidden = polos || form.format !== 'keduanya';
+  if (polos) { $('#infoDurasi').innerHTML = ''; return; }
   const nReels = +$('#jumlah_reels').value || 1;
   const dReels = +$('#durasi_reels').value || 45;
   if (form.format === 'keduanya') {
@@ -206,6 +215,13 @@ $('#efFolder').addEventListener('change', (e) => {
   const mb = efFiles.reduce((s, f) => s + f.size, 0) / 1048576;
   $('#efInfoFile').textContent = efFiles.length ? `${efFiles.length} video (${mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : Math.round(mb) + ' MB'})` : 'Tidak ada video di folder itu';
 });
+$('#moFolder').addEventListener('change', (e) => {
+  const vid = /\.(mp4|mov|mkv|webm|avi|m4v)$/i;
+  moFiles = [...(e.target.files || [])].filter((f) => vid.test(f.name));
+  const mb = moFiles.reduce((s, f) => s + f.size, 0) / 1048576;
+  $('#moInfoFile').textContent = moFiles.length ? `${moFiles.length} video (${mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : Math.round(mb) + ' MB'})` : 'Tidak ada video di folder itu';
+});
+$('#segMoFormat').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; moFormat = b.dataset.v; pilihSeg('#segMoFormat', moFormat); });
 $('#segFormat').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; form.format = b.dataset.v; pilihSeg('#segFormat', form.format); perbaruiInfo(); });
 ['durasi', 'cek_gambar', 'jumlah_reels', 'durasi_reels'].forEach((k) => $('#' + k).addEventListener('change', perbaruiInfo));
 $('#teks').addEventListener('input', () => { if (form.mode === 'bacakan') perbaruiInfo(); });
@@ -255,6 +271,25 @@ $('#btnBuat').addEventListener('click', async () => {
       const r = await api('/api/editfolder', { body: fd });
       efFiles = []; $('#efFolder').value = ''; $('#efInfoFile').textContent = 'Belum ada folder';
       $('#infoBuat').textContent = `✓ ${r.jumlah} klip diunggah, video sedang dibuat.`;
+      muatDaftar();
+    } catch (err) { $('#infoBuat').textContent = 'Gagal: ' + err.message; }
+    b.disabled = false;
+    return;
+  }
+  if (form.mode === 'montase') {
+    if (!moFiles.length) { $('#infoBuat').textContent = 'Pilih folder klip dulu.'; return; }
+    b.disabled = true;
+    $('#infoBuat').textContent = `Mengunggah ${moFiles.length} klip… (folder besar bisa lama, jangan tutup halaman)`;
+    try {
+      const fd = new FormData();
+      moFiles.forEach((f) => fd.append('file', f));
+      fd.append('judul', $('#moJudul').value.trim());
+      fd.append('format', moFormat);
+      fd.append('durasi', $('#moDurasi').value);
+      fd.append('opsi', JSON.stringify(opsiForm()));
+      const r = await api('/api/montase', { body: fd });
+      moFiles = []; $('#moFolder').value = ''; $('#moInfoFile').textContent = 'Belum ada folder';
+      $('#infoBuat').textContent = `✓ ${r.jumlah} klip diunggah, montase sedang dibuat.`;
       muatDaftar();
     } catch (err) { $('#infoBuat').textContent = 'Gagal: ' + err.message; }
     b.disabled = false;

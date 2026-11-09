@@ -55,9 +55,11 @@ BUKAN_SUBJEK = re.compile(
     # foto pribadi/keluarga (Openverse/Flickr: "Landon With Giant Painted Pig" lolos sebagai "bukti raksasa")
     r"\bbaby\b|\bbabies\b|toddler|newborn|\bkids?\b|\bchild(ren)?\b|selfie|birthday|wedding|\bfamily\b|vacation|"
     r"my (son|daughter|wife|husband|dog|cat)|grandson|granddaughter|\bbayi\b|ulang tahun|"
-    # kartun, game, fan-art (fan-art Pokémon "based on Maushop" pernah jadi panel perbandingan)
-    r"pok[eé]mon|\banime\b|\bmanga\b|cartoon|kartun|chibi|fan ?art|fanart|minecraft|roblox|fortnite|"
-    r"\bvideo ?game\b|\bgameplay\b|\bfunko\b|action figure|figurine|"
+    # Kartun/anime/animasi/cuplikan film/klip game kini BOLEH dipakai kalau memang paling cocok
+    # (cocok_judul + juri AI yang menyaring) — sesuai permintaan "cari aja footage dari video, potong".
+    # Disisakan HANYA penjaga fan-art & merch mainan yang dulu nyasar (fan-art Pokémon "based on
+    # Maushop" lolos sebagai panel perbandingan; action figure/funko bukan footage adegan):
+    r"fan ?art|fanart|\bfunko\b|action figure|figurine|"
     # daging/bangkai/sabung: "Chickens in market" (ayam potong tergantung) pernah jadi shot penutup video dinosaurus
     r"carcass|slaughter|butcher|plucked|\bmeat\b|poultry market|chickens? in (a )?market|daging|cock ?fight|"
     r"chicken fight|sabung", re.I)

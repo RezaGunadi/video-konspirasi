@@ -1235,7 +1235,17 @@ def _rapikan(baris, spec):
         tk = (spec[-1].get("teks") or "").strip()
         if (not tk) or tk.lower() in keyset or tk.lower() in ("maskot", "") or len(tk) > 22:
             spec[-1]["teks"] = "Subscribe ya!"
-    # 3) dedup: 2 adegan beruntun yang sama → variasikan yang ke-2
+    # 3) batasi banding (director suka maksa 'X vs SUHU' berulang) → max 1; sisanya jadi sorot komposisi
+    bcount = 0
+    for i in range(1, n):
+        if spec[i].get("tipe") == "banding":
+            bcount += 1
+            if bcount > 1:
+                ki = spec[i].get("kiri") if spec[i].get("kiri") in ASET else "lampu"
+                ka = spec[i].get("kanan") if spec[i].get("kanan") in ASET else None
+                spec[i] = {"tipe": "sorot", "aset": ki, "elemen": ([ka] if ka and ka != ki else []),
+                           "label": _ASET_LABEL.get(ki, ki.upper()), "bg": spec[i].get("bg", "sains"), "var": spec[i].get("var", i)}
+    # 4) dedup: 2 adegan beruntun yang sama → variasikan yang ke-2
     for i in range(1, n):
         a, b = spec[i - 1], spec[i]
         if a.get("tipe") == b.get("tipe") == "sorot" and a.get("aset") == b.get("aset"):

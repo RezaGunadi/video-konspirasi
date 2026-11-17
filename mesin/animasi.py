@@ -91,6 +91,9 @@ def _entrance(var, prog, W, H):
 _HIAS_WARNA = {"gurun": (235, 205, 150), "laut": (180, 222, 245), "langit": (255, 255, 255),
                "hijau": (195, 232, 175), "tubuh": (242, 185, 195), "angkasa": (255, 247, 214),
                "malam": (205, 214, 240), "sains": (150, 200, 240)}
+# aset "tanda tangan" per tema buat visual besar di opening (hook)
+_BG_ASET = {"gurun": "matahari", "laut": "tetes_air", "langit": "awan", "hijau": "pohon",
+            "angkasa": "bumi", "malam": "bulan", "tubuh": "sel", "sains": "atom"}
 
 
 def _hias(f, i, bg, W, H, seed=0):
@@ -677,20 +680,23 @@ class Judul(Adegan):
         _furnitur(f, i, self.bg, self.W, self.H, self.p.get("var", 0))
         _hias(f, i, self.bg, self.W, self.H, seed=5)
         t = i / FPS
-        sc = overshoot(min(1, (i + 1) / (0.5 * FPS)))
-        flo = 1 + 0.015 * math.sin(i * 0.1)
+        # HOOK: visual besar "tanda tangan" topik (pop-in gede) biar retensi awal kuat
+        aset = self.p.get("aset") if self.p.get("aset") in ASET else _BG_ASET.get(self.bg)
+        vp = ease_out(min(1, i / (0.4 * FPS)))
+        if aset in ASET and vp > 0:
+            ASET[aset](f, self.W / 2, self.H * 0.52, (0.2 + 1.25 * vp) * (1 + 0.05 * math.sin(t * 1.8)), t)
+        sc = overshoot(min(1, (i + 1) / (0.42 * FPS)))
         s = _judul_pendek(self.p.get("judul", "SAINS"))
-        px = _fit_px(f, s, self.W * 0.84, 80)
-        teks(f, s, self.W / 2, self.H * 0.30, px * sc * flo)
-        wlen = ease_out(min(1, max(0, (i - 0.3 * FPS) / (0.5 * FPS))))
+        px = _fit_px(f, s, self.W * 0.9, 88)
+        teks(f, s, self.W / 2, self.H * 0.2, px * sc)
+        wlen = ease_out(min(1, max(0, (i - 0.25 * FPS) / (0.4 * FPS))))
         if wlen > 0:
-            w = self.W * 0.3 * wlen
+            w = self.W * 0.32 * wlen
             ImageDraw.Draw(f).rounded_rectangle(
-                [P(self.W / 2 - w, self.H * 0.405), P(self.W / 2 + w, self.H * 0.415)], radius=6 * SS, fill=ACCENT_Y + (255,))
-        naik = ease_out(min(1, max(0, (i - 0.25 * FPS) / (0.4 * FPS))))   # maskot host dadah (intro nggak text-doang)
+                [P(self.W / 2 - w, self.H * 0.285), P(self.W / 2 + w, self.H * 0.296)], radius=6 * SS, fill=ACCENT_Y + (255,))
+        naik = ease_out(min(1, max(0, (i - 0.3 * FPS) / (0.4 * FPS))))   # maskot host muncul
         if naik > 0:
-            cy = self.H * 0.66 + (0.32 * self.H) * (1 - naik) + 10 * math.sin(t * 2)
-            maskot(f, self.W / 2, cy, 1.12, wave=i * 0.5)
+            maskot(f, self.W / 2, self.H * 0.82 + (0.3 * self.H) * (1 - naik) + 9 * math.sin(t * 2), 0.9, wave=i * 0.5)
 
 
 class Roket(Adegan):
@@ -891,8 +897,74 @@ class SiangMalam(Adegan):
         return f
 
 
+def _awan_bentuk(f, cx, cy, w, col=(246, 249, 252)):
+    d = ImageDraw.Draw(f)
+    for dx, dy, r in ((-0.55, 0.1, 0.42), (0.55, 0.1, 0.42), (-0.2, -0.22, 0.5), (0.25, -0.16, 0.48), (0, 0.15, 0.56)):
+        _ell(d, cx + dx * w, cy + dy * w, r * w, col + (255,))
+
+
+def _hujan(f, i, x0, x1, ytop, ybot, seed=0, warna=(120, 180, 235)):
+    d = ImageDraw.Draw(f)
+    rng = np.random.default_rng(seed)
+    for _ in range(26):
+        x = rng.uniform(x0, x1)
+        ph, spd = rng.uniform(0, 1), rng.uniform(0.85, 1.4)
+        yy = ytop + ((i * spd * 0.055 + ph) % 1.0) * (ybot - ytop)
+        d.line([P(x, yy), P(x - 5, yy + 34)], fill=warna + (220,), width=int(4 * SS))
+
+
+def _gunung_satu(f, cx, base, w, h, col):
+    d = ImageDraw.Draw(f)
+    top = base - h
+    d.polygon([P(cx, top), P(cx - w, base), P(cx + w, base)], fill=col + (255,))
+    d.polygon([P(cx, top), P(cx - w * 0.3, top + h * 0.26), P(cx + w * 0.3, top + h * 0.26)], fill=(240, 245, 250, 255))
+
+
+class Hujan(Adegan):
+    """Resep HUJAN: awan beneran + hujan turun (bukan tetes diam) + genangan."""
+    def bangun_statis(self):
+        return latar(self.fmt, self.bg if self.bg in ("langit", "malam") else "langit")
+
+    def gambar(self, f, i):
+        t, W, H = i / FPS, self.W, self.H
+        e = ease_out(min(1, i / (0.45 * FPS)))
+        for cx, cy, w in ((W * 0.32, H * 0.26, W * 0.15), (W * 0.62, H * 0.22, W * 0.17), (W * 0.48, H * 0.32, W * 0.13)):
+            _awan_bentuk(f, cx, cy - (1 - e) * H * 0.1, w * (0.6 + 0.4 * e), (235, 240, 246))
+        _hujan(f, i, W * 0.18, W * 0.82, H * 0.38, H * 0.82)
+        d = ImageDraw.Draw(f)
+        for k in range(5):      # genangan bawah
+            _ell(d, W * (0.15 + 0.17 * k), H * 0.88, (18 + 6 * math.sin(t * 3 + k)), (110, 170, 225, 200))
+        if self.p.get("label"):
+            kartu_label(f, self.p["label"], W / 2, H * 0.92)
+
+
+class BayanganHujan(Adegan):
+    """Resep BAYANGAN HUJAN: 2 gunung apit gurun; awan keblok gunung kiri → hujan di sisi kiri, GURUN kering di tengah."""
+    def bangun_statis(self):
+        W, H = self.W, self.H
+        f = _grad(self.fmt, (120, 170, 225), (236, 198, 140))
+        d = ImageDraw.Draw(f)
+        base = H * 0.72
+        d.rectangle([P(0, base), P(W, H)], fill=(220, 176, 116, 255))
+        _ell(d, W * 0.5, base + H * 0.14, W * 0.34, (202, 156, 100, 255))
+        _gunung_satu(f, W * 0.2, base, W * 0.28, H * 0.44, (104, 90, 116))
+        _gunung_satu(f, W * 0.82, base, W * 0.24, H * 0.36, (118, 104, 130))
+        return f
+
+    def gambar(self, f, i):
+        t, W, H = i / FPS, self.W, self.H
+        e = ease_out(min(1, i / (0.55 * FPS)))
+        cxc = W * (-0.05 + 0.28 * e)                      # awan masuk dari kiri ke gunung
+        _awan_bentuk(f, cxc, H * 0.2, W * 0.15, (210, 216, 224))
+        _hujan(f, i, W * 0.08, W * 0.3, H * 0.26, H * 0.66)   # hujan di sisi gunung (windward)
+        _matahari_kecil(f, W * 0.55, H * 0.15, 54)           # gurun kering terik di tengah
+        _kaktus(f, W * 0.52, H * 0.84, 0.9)
+        kartu_label(f, self.p.get("label") or "BAYANGAN HUJAN", W * 0.5, H * 0.93, px=40)
+
+
 TEMPLATE = {"judul": Judul, "roket": Roket, "orbit": Orbit, "sorot": Sorot, "banding": Banding,
-            "maskot": Maskot, "presenter": Presenter, "siang_malam": SiangMalam}
+            "maskot": Maskot, "presenter": Presenter, "siang_malam": SiangMalam,
+            "hujan": Hujan, "bayangan_hujan": BayanganHujan}
 
 
 # ======================================================================= render
@@ -907,6 +979,9 @@ _ASET_LABEL = {"termometer": "SUHU", "panas": "PANAS", "es": "DINGIN", "gelomban
 _KW = [
     (r"matahari terbenam|senja|panas.{0,20}siang.{0,30}dingin.{0,20}malam|dingin.{0,20}malam.{0,30}panas.{0,20}siang|"
      r"suhu.{0,20}(turun|anjlok).{0,20}malam|membeku.{0,20}malam|malam.{0,20}membeku", {"tipe": "siang_malam", "label": "MALAM"}),
+    (r"bayangan hujan|rain shadow|diapit.{0,15}gunung|gunung.{0,25}(halang|blok|hadang|tahan).{0,15}awan|"
+     r"awan.{0,15}(terhalang|keblok|tertahan).{0,15}gunung|dikelilingi pegunungan|pegunungan mengurung", {"tipe": "bayangan_hujan", "label": "BAYANGAN HUJAN"}),
+    (r"turun hujan|hujan turun|air hujan|hujan deras|mendung|awan.{0,15}hujan", {"tipe": "hujan", "label": "HUJAN"}),
     (r"roket|meluncur|luncur|dorong|propuls|wahana antariksa", {"tipe": "roket", "label": "DORONGAN"}),
     (r"orbit|mengelilingi|mengitari|revolusi|ngitar", {"tipe": "orbit", "pusat": "bumi", "keliling": "bulan", "label": "ORBIT"}),
     (r"\bbulan\b", {"tipe": "sorot", "aset": "bulan"}),
@@ -1023,6 +1098,8 @@ def _bersihkan_spec(a, teks, bg_default="sains"):
         return {"tipe": "presenter", "aset": aset, "label": lab, "bg": bg}
     if tipe == "siang_malam":
         return {"tipe": "siang_malam", "label": lab or "MALAM", "bg": bg}
+    if tipe in ("hujan", "bayangan_hujan"):
+        return {"tipe": tipe, "label": lab or ("HUJAN" if tipe == "hujan" else "BAYANGAN HUJAN"), "bg": bg}
     return {"tipe": "judul", "judul": _judul_pendek(lab or teks), "bg": bg}
 
 
@@ -1051,7 +1128,9 @@ def sutradara(cfg, judul, baris, batal=None, log=print):
                "RESEP KHUSUS (lebih bagus dari 'sorot', pakai kalau COCOK): 'presenter'=karakter GURU (kacamata) "
                "jelasin di depan PROYEKTOR (buat kalimat PENJELASAN/pembuka — isi 'aset' buat gambar di layar); "
                "'siang_malam'=sekuens matahari TERBENAM → bulan naik → suhu TURUN → tanah MEMBEKU (khusus kalimat soal "
-               "panas di siang & dingin/beku di malam).\n"
+               "panas di siang & dingin/beku di malam); 'hujan'=awan + HUJAN TURUN (kalimat soal hujan/mendung); "
+               "'bayangan_hujan'=2 gunung apit gurun, awan keblok gunung → hujan di 1 sisi, gurun kering (kalimat soal "
+               "gunung menghalangi awan/hujan atau gurun diapit pegunungan).\n"
                "Untuk 'sorot' pilih 'aset'; 'banding' WAJIB 'kiri'+'kanan' DUA aset BEDA; 'foto' WAJIB isi 'query' "
                "Inggris spesifik (mis. 'atacama desert landscape'). Aset dari daftar ini saja: " + ", ".join(keys) + ".\n"
                "VARIASI: jangan ngulang 'banding'/'maskot' berturut-turut; mayoritas 'sorot' dengan aset BEDA-BEDA; "

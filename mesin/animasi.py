@@ -150,22 +150,24 @@ def _matahari_kecil(f, x, y, r):
     _ell(d, x - r * 0.25, y - r * 0.25, r * 0.5, SUN_CORE + (255,))
 
 
-def _furnitur(f, i, bg, W, H):
+def _furnitur(f, i, bg, W, H, var=0):
     t = i / FPS
+    sx = 0.82 if var % 2 == 0 else 0.18      # matahari gantian kiri/kanan tiap adegan
+    jx = (var % 3) * 0.05                     # geser kecil biar nggak sama persis
     if bg == "gurun":
-        _matahari_kecil(f, W * 0.82, H * 0.15, 58)
-        _kaktus(f, W * 0.1, H * 0.82, 1.0)
-        _kaktus(f, W * 0.9, H * 0.9, 0.7)
+        _matahari_kecil(f, W * sx, H * 0.15, 58)
+        _kaktus(f, W * (0.1 + jx), H * 0.82, 1.0)
+        _kaktus(f, W * (0.9 - jx), H * 0.9, 0.7)
     elif bg == "langit":
-        _matahari_kecil(f, W * 0.8, H * 0.14, 56)
+        _matahari_kecil(f, W * sx, H * 0.14, 56)
         for k, bx in enumerate((0.22, 0.42, 0.3)):
-            _burung(f, (bx + 0.08 * math.sin(t * 0.4 + k)) * W, (0.3 + 0.05 * k) * H, 0.7 + 0.2 * k)
+            _burung(f, (bx + jx + 0.08 * math.sin(t * 0.4 + k)) * W, (0.3 + 0.05 * k) * H, 0.7 + 0.2 * k)
     elif bg == "laut":
         for k in range(3):
-            _ikan(f, ((0.16 + 0.3 * k) + 0.06 * math.sin(t * 0.8 + k)) * W, (0.72 + 0.06 * k) * H, 1 - 0.15 * k)
+            _ikan(f, ((0.14 + 0.3 * k + jx) + 0.06 * math.sin(t * 0.8 + k)) * W, (0.72 + 0.06 * k) * H, 1 - 0.15 * k)
     elif bg == "hijau":
-        _pohon_kecil(f, W * 0.1, H * 0.82, 1.1)
-        _pohon_kecil(f, W * 0.9, H * 0.86, 0.9)
+        _pohon_kecil(f, W * (0.1 + jx), H * 0.82, 1.1)
+        _pohon_kecil(f, W * (0.9 - jx), H * 0.86, 0.9)
 
 
 _FONTS = {}
@@ -576,6 +578,37 @@ def bintang_besar(f, cx, cy, sc, t=0):
     d.polygon(pts, fill=(255, 202, 40, 255))
 
 
+def gunung(f, cx, cy, sc, t=0):
+    d = ImageDraw.Draw(f)
+    base = cy + 130 * sc
+    for dx, w, h, c in ((-95 * sc, 160 * sc, 205 * sc, (120, 104, 132, 255)),
+                        (80 * sc, 140 * sc, 235 * sc, (102, 88, 114, 255)),
+                        (0 * sc, 182 * sc, 295 * sc, (136, 118, 146, 255))):
+        px, top = cx + dx, base - (h if dx == 0 else (h))
+        top = base - h
+        d.polygon([P(px, top), P(px - w, base), P(px + w, base)], fill=c)
+        d.polygon([P(px, top), P(px - w * 0.3, top + h * 0.26), P(px + w * 0.3, top + h * 0.26)], fill=(240, 245, 250, 255))
+
+
+def awan(f, cx, cy, sc, t=0):
+    d = ImageDraw.Draw(f)
+    w = 150 * sc
+    for dx, dy, r in ((-0.55, 0.1, 0.42), (0.55, 0.1, 0.42), (-0.2, -0.2, 0.5), (0.25, -0.15, 0.48), (0, 0.15, 0.56)):
+        _ell(d, cx + dx * w, cy + dy * w, r * w, (246, 249, 252, 255))
+    for k in range(4):
+        rx = cx + (k - 1.5) * 46 * sc + 8 * sc * math.sin(t * 3 + k)
+        d.line([P(rx, cy + 0.5 * w), P(rx - 6 * sc, cy + 0.5 * w + 42 * sc)], fill=(96, 164, 224, 255), width=int(7 * sc))
+
+
+def pohon_aset(f, cx, cy, sc, t=0):
+    d = ImageDraw.Draw(f)
+    d.rounded_rectangle([P(cx - 22 * sc, cy), P(cx + 22 * sc, cy + 120 * sc)], radius=int(14 * sc * SS), fill=(122, 86, 56, 255))
+    _ell(d, cx - 70 * sc, cy - 20 * sc, 62 * sc, (86, 166, 100, 255))
+    _ell(d, cx + 70 * sc, cy - 20 * sc, 62 * sc, (86, 166, 100, 255))
+    _ell(d, cx, cy - 64 * sc, 95 * sc, (78, 158, 92, 255))
+    _ell(d, cx, cy - 10 * sc, 76 * sc, (98, 178, 112, 255))
+
+
 # registry: nama aset (dipakai director LLM) -> fungsi gambar (f, cx, cy, sc, t)
 ASET = {
     "bumi": lambda f, cx, cy, sc, t: planet(f, cx, cy, 150 * sc),
@@ -589,7 +622,7 @@ ASET = {
     "bintang": bintang_besar,
     "termometer": termometer, "panas": panas, "es": es, "mata": mata, "sel": sel, "dna": dna,
     "balon": balon, "gelombang_suara": gelombang_suara, "termos": termos, "hewan": hewan,
-    "lampu": lampu, "magnet": magnet,
+    "lampu": lampu, "magnet": magnet, "gunung": gunung, "awan": awan, "pohon": pohon_aset,
 }
 
 
@@ -625,17 +658,23 @@ class Adegan:
 class Judul(Adegan):
     def gambar(self, f, i):
         self.taburi_bintang(f, i / FPS)
-        t = min(1, (i + 1) / (0.5 * FPS))
-        sc = overshoot(t)
+        _furnitur(f, i, self.bg, self.W, self.H, self.p.get("var", 0))
+        _hias(f, i, self.bg, self.W, self.H, seed=5)
+        t = i / FPS
+        sc = overshoot(min(1, (i + 1) / (0.5 * FPS)))
         flo = 1 + 0.015 * math.sin(i * 0.1)
         s = _judul_pendek(self.p.get("judul", "SAINS"))
-        px = _fit_px(f, s, self.W * 0.84, 82)
-        teks(f, s, self.W / 2, self.H * 0.40, px * sc * flo)
-        wlen = min(1, max(0, (i - 0.3 * FPS) / (0.5 * FPS)))
+        px = _fit_px(f, s, self.W * 0.84, 80)
+        teks(f, s, self.W / 2, self.H * 0.30, px * sc * flo)
+        wlen = ease_out(min(1, max(0, (i - 0.3 * FPS) / (0.5 * FPS))))
         if wlen > 0:
-            w = self.W * 0.3 * ease_out(wlen)
+            w = self.W * 0.3 * wlen
             ImageDraw.Draw(f).rounded_rectangle(
-                [P(self.W / 2 - w, self.H * 0.52), P(self.W / 2 + w, self.H * 0.53)], radius=6 * SS, fill=ACCENT_Y + (255,))
+                [P(self.W / 2 - w, self.H * 0.405), P(self.W / 2 + w, self.H * 0.415)], radius=6 * SS, fill=ACCENT_Y + (255,))
+        naik = ease_out(min(1, max(0, (i - 0.25 * FPS) / (0.4 * FPS))))   # maskot host dadah (intro nggak text-doang)
+        if naik > 0:
+            cy = self.H * 0.66 + (0.32 * self.H) * (1 - naik) + 10 * math.sin(t * 2)
+            maskot(f, self.W / 2, cy, 1.12, wave=i * 0.5)
 
 
 class Roket(Adegan):
@@ -709,7 +748,7 @@ class Sorot(Adegan):
     """Sorot 1 aset: masuk bervariasi (pop/geser/naik/membesar) + idle bob + partikel hias + label slide."""
     def gambar(self, f, i):
         self.taburi_bintang(f, i / FPS)
-        _furnitur(f, i, self.bg, self.W, self.H)
+        _furnitur(f, i, self.bg, self.W, self.H, self.p.get("var", 0))
         _hias(f, i, self.bg, self.W, self.H, seed=abs(hash(self.p.get("aset", ""))) % 1000)
         t, prog = i / FPS, i / (0.45 * FPS)
         settle = min(1, prog)
@@ -728,7 +767,7 @@ class Banding(Adegan):
     """Dua aset masuk dari sisi berlawanan + 'VS' yang nge-pop + partikel hias."""
     def gambar(self, f, i):
         self.taburi_bintang(f, i / FPS)
-        _furnitur(f, i, self.bg, self.W, self.H)
+        _furnitur(f, i, self.bg, self.W, self.H, self.p.get("var", 0))
         _hias(f, i, self.bg, self.W, self.H, seed=321)
         t = i / FPS
         e = ease_out(min(1, i / (0.45 * FPS)))
@@ -744,7 +783,7 @@ class Banding(Adegan):
 class Maskot(Adegan):
     def gambar(self, f, i):
         self.taburi_bintang(f, i / FPS)
-        _furnitur(f, i, self.bg, self.W, self.H)
+        _furnitur(f, i, self.bg, self.W, self.H, self.p.get("var", 0))
         _hias(f, i, self.bg, self.W, self.H, seed=77)
         t = i / FPS
         naik = ease_out(min(1, i / (0.4 * FPS)))
@@ -763,7 +802,7 @@ _ASET_LABEL = {"termometer": "SUHU", "panas": "PANAS", "es": "DINGIN", "gelomban
                "tetes_air": "AIR", "balon": "GAS", "sel": "SEL", "dna": "DNA", "mata": "MATA",
                "magnet": "MAGNET", "matahari": "MATAHARI", "bumi": "BUMI", "bulan": "BULAN", "mars": "MARS",
                "atom": "ATOM", "roket": "ROKET", "hewan": "HEWAN", "lampu": "IDE", "bintang": "BINTANG",
-               "termos": "TERMOS", "planet": "PLANET"}
+               "termos": "TERMOS", "planet": "PLANET", "gunung": "GUNUNG", "awan": "AWAN", "pohon": "POHON"}
 
 # aturan keyword (fallback kalau LLM mati / tak kebaca). Urut: cocok pertama menang.
 _KW = [
@@ -783,6 +822,9 @@ _KW = [
     (r"balon|helium|\bgas\b", {"tipe": "sorot", "aset": "balon"}),
     (r"suara|bunyi|dengar|frekuensi|getar|akustik", {"tipe": "sorot", "aset": "gelombang_suara"}),
     (r"termos|botol|termal|insulasi", {"tipe": "sorot", "aset": "termos"}),
+    (r"gunung|pegunungan|puncak|tebing|lembah|bukit", {"tipe": "sorot", "aset": "gunung"}),
+    (r"awan|mendung|hujan|kabut|badai", {"tipe": "sorot", "aset": "awan"}),
+    (r"pohon|hutan|tumbuhan|daun|tanaman|rimba", {"tipe": "sorot", "aset": "pohon"}),
     (r"unta|zebra|hewan|binatang|kucing|anjing|singa|burung|ikan|ubur", {"tipe": "sorot", "aset": "hewan"}),
     (r"air|cair|tetes|basah|lembap|lembab|\buap\b|hujan", {"tipe": "sorot", "aset": "tetes_air"}),
     (r"magnet|kutub|tarik-menarik|medan", {"tipe": "sorot", "aset": "magnet"}),
@@ -850,11 +892,13 @@ def _bersihkan_spec(a, teks, bg_default="sains"):
     """Validasi 1 spec dari LLM; jatuh ke keyword kalau tak valid. Sisipkan 'bg' (tema latar)."""
     bg = a.get("bg") if a.get("bg") in _TEMA else bg_default
     tipe = a.get("tipe")
+    lab = (a.get("label") or "").strip().upper()[:16]
+    if tipe == "foto":   # footage/foto ASLI dari web (ditangani di pipeline, bukan template animasi)
+        return {"tipe": "foto", "query": ((a.get("query") or "").strip() or teks[:60])[:80], "label": lab, "bg": bg}
     if tipe not in TEMPLATE:
         s = _keyword_spec(teks)
         s["bg"] = bg
         return s
-    lab = (a.get("label") or "").strip().upper()[:16]
     if tipe == "sorot":
         aset = a.get("aset") if a.get("aset") in ASET else (_keyword_spec(teks).get("aset") or "lampu")
         # label jangan sekadar nama aset (mis. "TETES_AIR"/"HEWAN") → pakai label bersih
@@ -894,13 +938,17 @@ def sutradara(cfg, judul, baris, batal=None, log=print):
         keys = list(ASET.keys())
         sis = ("Kamu pengarah video SAINS animasi flat (gaya Kurzgesagt) untuk penonton muda Indonesia. "
                "Untuk TIAP kalimat narasi, pilih SATU adegan visual yang paling mewakili maknanya.\n"
-               "Template: 'judul'=kalimat pembuka; 'roket'=peluncuran/dorongan/ke luar angkasa; "
-               "'orbit'=mengelilingi/revolusi; 'banding'=membandingkan DUA hal; 'maskot'=pertanyaan/sapaan/ajakan; "
-               "'sorot'=tampilkan SATU benda (DEFAULT, paling sering).\n"
-               "Untuk 'sorot' pilih 'aset'; untuk 'banding' WAJIB isi 'kiri' DAN 'kanan' dengan DUA aset BERBEDA; "
-               "dari daftar aset ini saja: " + ", ".join(keys) + ".\n"
-               "'label' = 1-2 kata HURUF BESAR, pakai kata PALING SPESIFIK dari kalimat (mis. 'UNTA', 'HELIUM', "
-               "'GURUN', 'VENUS'). JANGAN pakai nama aset sebagai label (jangan 'HEWAN'/'TETES_AIR').\n"
+               "Template: 'judul'=kalimat pembuka; 'roket'=peluncuran/ke luar angkasa; 'orbit'=mengelilingi/revolusi; "
+               "'banding'=membandingkan DUA hal; 'maskot'=sapaan/ajakan (CUKUP di pembuka/penutup); "
+               "'sorot'=tampilkan SATU benda (DEFAULT); 'foto'=FOTO/VIDEO ASLI dari web buat TEMPAT atau BENDA NYATA "
+               "spesifik yang lebih bagus kalau nyata (mis. gurun Atacama, aurora, unta, Venus).\n"
+               "Untuk 'sorot' pilih 'aset'; 'banding' WAJIB 'kiri'+'kanan' DUA aset BEDA; 'foto' WAJIB isi 'query' "
+               "Inggris spesifik (mis. 'atacama desert landscape'). Aset dari daftar ini saja: " + ", ".join(keys) + ".\n"
+               "VARIASI: jangan ngulang 'banding'/'maskot' berturut-turut; mayoritas 'sorot' dengan aset BEDA-BEDA; "
+               "pakai 'foto' hemat (1-3x/video, buat establishing shot). Kalau NGGAK ADA aset yang pas buat subjek, "
+               "pakai 'foto' (query real) — JANGAN maksa aset yang salah makna (mis. jangan 'bumi' buat gunung).\n"
+               "'label' = 1-2 kata HURUF BESAR, kata PALING SPESIFIK dari kalimat (mis. 'UNTA', 'HELIUM', 'VENUS'). "
+               "JANGAN pakai nama aset sebagai label (jangan 'HEWAN'/'TETES_AIR').\n"
                "'bg_utama' = tema latar UTAMA video (konsisten) dari: " + ", ".join(tema_keys) + " "
                "(angkasa=ruang/planet, gurun=pasir, langit=awan/udara, laut=air/laut, hijau=alam/hutan, "
                "malam, sains=netral/fisika/kimia, tubuh=biologi/organ). Tiap adegan boleh kasih 'bg' sendiri "
@@ -910,10 +958,11 @@ def sutradara(cfg, judul, baris, batal=None, log=print):
         schema = {"type": "object", "properties": {
                   "bg_utama": {"type": "string", "enum": tema_keys},
                   "adegan": {"type": "array", "items": {"type": "object",
-                  "properties": {"tipe": {"type": "string", "enum": list(TEMPLATE)},
+                  "properties": {"tipe": {"type": "string", "enum": list(TEMPLATE) + ["foto"]},
                                  "aset": {"type": "string", "enum": keys},
                                  "kiri": {"type": "string", "enum": keys},
                                  "kanan": {"type": "string", "enum": keys},
+                                 "query": {"type": "string"},
                                  "bg": {"type": "string", "enum": tema_keys},
                                  "label": {"type": "string"}}, "required": ["tipe", "label"]}}},
                   "required": ["bg_utama", "adegan"]}

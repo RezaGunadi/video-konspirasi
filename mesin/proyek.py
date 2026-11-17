@@ -1454,7 +1454,9 @@ def _animasi(p):
 
 
 def _footage_animasi(p, cfg, batal):
-    """Pengganti langkah footage utk mode animasi: sutradara LLM pilih template+aset tiap adegan (a['anim'])."""
+    """Langkah footage utk mode animasi: sutradara LLM pilih template+aset+bg tiap adegan (a['anim']);
+    adegan bertipe 'foto' dicarikan FOOTAGE/FOTO ASLI (sumber lisensi bebas), gagal → balik ke animasi."""
+    o = p["opsi"]
     judul = p["meta"].get("judul") or p["nama"]
     teks = [a["teks"] for a in p["adegan"]]
     log(p, f"Sutradara animasi: menata {len(teks)} adegan…")
@@ -1464,6 +1466,31 @@ def _footage_animasi(p, cfg, batal):
         a["anim"] = s
         a.setdefault("kandidat", [])
         a.setdefault("shots", [])
+    foto = [a for a in p["adegan"] if (a.get("anim") or {}).get("tipe") == "foto"]
+    for idx, a in enumerate(foto):
+        batal.cek()
+        q = (a["anim"].get("query") or a["teks"][:60]).strip()
+        p["pesan"] = f"Cari footage asli {idx + 1}/{len(foto)}: {q[:36]}"
+        kand = []
+        try:
+            kand = footage.cari_kandidat(cfg, q, "", o["format"], log=lambda t: log(p, t), video=True) \
+                or footage.cari_kandidat(cfg, q, "", o["format"], log=lambda t: log(p, t), video=False)
+        except Dibatalkan:
+            raise
+        except Exception as e:
+            log(p, f"  Cari footage gagal ({str(e)[:60]})")
+        try:
+            kand = [k for k in kand if not footage.salah_arti(k, f"{a['teks']} {q}")] or kand
+        except Exception:
+            pass
+        if kand:
+            a["anim"]["kand"] = kand[0]
+            log(p, f"  📷 footage '{q[:36]}' → {kand[0].get('sumber')} ({kand[0].get('jenis')})")
+        else:
+            bg, var = a["anim"].get("bg", "sains"), a["anim"].get("var", 0)
+            a["anim"] = animasi._keyword_spec(a["teks"])
+            a["anim"]["bg"], a["anim"]["var"] = bg, var
+            log(p, f"  footage '{q[:36]}' nggak ketemu → animasi")
     _progres(p, "footage", 1.0)
 
 
@@ -1480,12 +1507,21 @@ def _render_animasi(p, cfg, batal):
         tujuan = kerja / f"anim-{i:03d}.mp4"
         spec = a.get("anim") or {"tipe": "sorot", "aset": "lampu", "label": "FAKTA"}
         try:
-            animasi.render_klip(spec, frames, o["format"], tujuan, batal=batal)
+            if spec.get("tipe") == "foto" and spec.get("kand"):
+                bahan = footage.siapkan(spec["kand"], frames / render.FPS, batal)
+                if not bahan:
+                    raise RuntimeError("siapkan footage gagal")
+                render.buat_shot(bahan, frames, o["format"], o["gaya"], o.get("isi_layar", True), i, tujuan, batal, gerak="masuk")
+            else:
+                animasi.render_klip(spec, frames, o["format"], tujuan, batal=batal)
         except Dibatalkan:
             raise
         except Exception as e:
-            log(p, f"  Adegan {i + 1} animasi gagal ({str(e)[:70]}); latar polos")
-            render.shot_kosong(frames, o["format"], tujuan, batal, gaya=o["gaya"])
+            log(p, f"  Adegan {i + 1} ({spec.get('tipe')}) gagal ({str(e)[:70]}); fallback animasi")
+            try:
+                animasi.render_klip(animasi._keyword_spec(a["teks"]), frames, o["format"], tujuan, batal=batal)
+            except Exception:
+                render.shot_kosong(frames, o["format"], tujuan, batal, gaya=o["gaya"])
         shots.append(tujuan)
         p["pesan"] = f"Render animasi adegan {i + 1}/{n}"
         _progres(p, "render", 0.8 * (i + 1) / n)

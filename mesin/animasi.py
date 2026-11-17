@@ -23,7 +23,8 @@ SS = 2                       # supersample -> tepi halus
 FPS = 30
 UK = {"9:16": (1080, 1920), "16:9": (1920, 1080)}
 FADE = 4                     # frame fade-in/out tiap adegan
-MODEL_SUTRADARA = "gemma4:12b-it-qat"   # model LLM pilihan buat sutradara (kalau ada di mini PC)
+MODEL_SUTRADARA = "qwen2.5:14b"   # model director+kritikus (qwen2.5 jago structured+instruksi); auto-pull kalau belum ada
+MODEL_SUTRADARA_CADANGAN = "gemma4:12b-it-qat"   # kalau pull gagal / RAM kurang
 
 # ---- palet flat ----
 SPACE_TOP, SPACE_BOT = (26, 32, 70), (9, 12, 32)
@@ -1103,6 +1104,87 @@ def _bersihkan_spec(a, teks, bg_default="sains"):
     return {"tipe": "judul", "judul": _judul_pendek(lab or teks), "bg": bg}
 
 
+def _pastikan_model(cfg, model, log=print):
+    """True kalau model ada di ollama; kalau belum, PULL dulu (sekali) — biar git-clone + jalan otomatis siap."""
+    try:
+        from . import ollama
+        if model in (ollama.daftar_model(cfg) or []):
+            return True
+        import requests
+        log(f"  ⬇️ model {model} belum ada di mini PC — pull dulu (sekali, bisa belasan menit)…")
+        r = requests.post(cfg["ollama_url"].rstrip("/") + "/api/pull", json={"name": model}, stream=True, timeout=3600)
+        for _ in r.iter_lines():
+            pass
+        return model in (ollama.daftar_model(cfg) or [])
+    except Exception as e:
+        log(f"  pull {model} gagal: {str(e)[:70]}")
+        return False
+
+
+def kritik(cfg, judul, baris, spec, batal=None, log=print):
+    """Pass REVIEW (multi-agent): LLM ngoreksi pilihan sutradara — buang repetisi, benerin resep/aset salah,
+    label spesifik. Kembalikan spec yang diperbaiki (fallback ke spec asli kalau gagal)."""
+    n = len(baris)
+    try:
+        from . import ollama
+        keys = list(ASET.keys())
+
+        def _ket(s):
+            x = s.get("aset") or s.get("query") or (f"{s.get('kiri')}+{s.get('kanan')}" if s.get("kiri") else "")
+            return f"[{s.get('tipe')}{'/' + x if x else ''}] '{s.get('label') or s.get('teks') or s.get('judul', '')}'"
+        ringkas = "\n".join(f"{i + 1}. {_ket(s)} — {baris[i][:58]}" for i, s in enumerate(spec))
+        sis = ("Kamu EDITOR video sains animasi flat. Di bawah ini pilihan adegan dari sutradara. PERBAIKI:\n"
+               "1) JANGAN ada tipe/aset yang diulang berturut-turut — variasikan.\n"
+               "2) Tiap adegan WAJIB cocok makna kalimatnya — ganti tipe/aset kalau salah.\n"
+               "3) 'label' = kata PALING SPESIFIK & benar dari kalimat (BUKAN nama aset).\n"
+               "4) Maskot cukup di pembuka/penutup. Pakai resep (siang_malam/hujan/bayangan_hujan/presenter) kalau pas.\n"
+               "Aset: " + ", ".join(keys) + ". Tipe: " + ", ".join(list(TEMPLATE) + ["foto"]) + ".\n"
+               "Keluarkan ULANG SEMUA adegan (jumlah & urutan SAMA) yang sudah diperbaiki.")
+        schema = {"type": "object", "properties": {"adegan": {"type": "array", "items": {"type": "object",
+                  "properties": {"tipe": {"type": "string", "enum": list(TEMPLATE) + ["foto"]},
+                                 "aset": {"type": "string", "enum": keys}, "kiri": {"type": "string", "enum": keys},
+                                 "kanan": {"type": "string", "enum": keys}, "query": {"type": "string"},
+                                 "label": {"type": "string"}}, "required": ["tipe", "label"]}}}, "required": ["adegan"]}
+        j = ollama.chat_json(cfg, [{"role": "system", "content": sis},
+                                   {"role": "user", "content": f"Judul: {judul}\nPilihan sutradara:\n{ringkas}"}],
+                             schema, batal=batal, maks_token=55 * n + 220, suhu=0.3)
+        arr = (j or {}).get("adegan") or []
+        if len(arr) >= n * 0.7:
+            out = [spec[0]]   # adegan 0 tetap judul
+            for i in range(1, n):
+                a = arr[i] if i < len(arr) else {}
+                s = _bersihkan_spec(a, baris[i], spec[i].get("bg", "sains"))
+                s["var"] = spec[i].get("var", i)
+                out.append(s)
+            log(f"  🔍 Kritikus review {n} adegan selesai")
+            return out
+    except Exception as e:
+        log(f"  Kritikus gagal ({str(e)[:60]}) — pakai pilihan sutradara")
+    return spec
+
+
+_PAKSA = [   # resep DIPAKSA kalau narasi jelas cocok (LLM sering milih banding/sorot yang 'aman')
+    (r"matahari terbenam|panas.{0,20}siang.{0,30}(dingin|beku|anjlok).{0,20}malam|membeku.{0,20}malam|"
+     r"malam.{0,20}membeku|suhu.{0,15}(anjlok|turun drastis)", "siang_malam"),
+    (r"gunung.{0,25}(halang|blok|hadang|tahan).{0,18}awan|diapit.{0,15}gunung|bayangan hujan|"
+     r"awan.{0,18}(terhalang|keblok|tertahan).{0,15}gunung|hujan.{0,15}sisi.{0,15}gunung|pegunungan.{0,20}menghalangi", "bayangan_hujan"),
+    (r"turun hujan|hujan turun|hujan deras|hujan lebat", "hujan"),
+]
+_PAKSA_LABEL = {"siang_malam": "MALAM", "bayangan_hujan": "BAYANGAN HUJAN", "hujan": "HUJAN"}
+
+
+def _paksa_resep(baris, spec):
+    """Paksa resep proses kalau narasi jelas cocok (biar resep spesifik pasti kepakai, bukan tergantung mood LLM)."""
+    for i in range(1, len(spec)):
+        t = (baris[i] or "").lower()
+        for pat, resep in _PAKSA:
+            if re.search(pat, t) and spec[i].get("tipe") != resep:
+                spec[i] = {"tipe": resep, "label": spec[i].get("label") or _PAKSA_LABEL[resep],
+                           "bg": spec[i].get("bg", "sains"), "var": spec[i].get("var", i)}
+                break
+    return spec
+
+
 def sutradara(cfg, judul, baris, batal=None, log=print):
     """baris = daftar kalimat narasi. Kembalikan 1 spec adegan per kalimat (template+aset+label).
     Pakai gemma (structured JSON); fallback aturan keyword per baris. Baris pertama selalu 'judul'."""
@@ -1110,14 +1192,14 @@ def sutradara(cfg, judul, baris, batal=None, log=print):
     spec = [None] * n
     bg_utama = _keyword_bg(f"{judul} {' '.join(baris)}")   # tema latar default dari topik
     tema_keys = list(_TEMA.keys())
+    llm_ok = False
     try:
         from . import ollama
         cfg = dict(cfg)
-        try:
-            if MODEL_SUTRADARA in ollama.daftar_model(cfg):
-                cfg["model"] = MODEL_SUTRADARA
-        except Exception:
-            pass
+        if _pastikan_model(cfg, MODEL_SUTRADARA, log):
+            cfg["model"] = MODEL_SUTRADARA
+        elif MODEL_SUTRADARA_CADANGAN in (ollama.daftar_model(cfg) or []):
+            cfg["model"] = MODEL_SUTRADARA_CADANGAN
         keys = list(ASET.keys())
         sis = ("Kamu pengarah video SAINS animasi flat (gaya Kurzgesagt) untuk penonton muda Indonesia. "
                "Untuk TIAP kalimat narasi, pilih SATU adegan visual yang paling mewakili maknanya.\n"
@@ -1162,6 +1244,7 @@ def sutradara(cfg, judul, baris, batal=None, log=print):
         arr = (j or {}).get("adegan") or []
         for i in range(min(n, len(arr))):
             spec[i] = _bersihkan_spec(arr[i], baris[i], bg_utama)
+        llm_ok = sum(1 for s in spec if s) >= n * 0.6
         log(f"  🎬 Sutradara AI: {sum(1 for s in spec if s)}/{n} adegan (tema latar: {bg_utama})")
     except Exception as e:
         log(f"  Sutradara AI gagal ({str(e)[:70]}) — pakai aturan keyword (tema {bg_utama})")
@@ -1173,6 +1256,9 @@ def sutradara(cfg, judul, baris, batal=None, log=print):
     spec[0] = {"tipe": "judul", "judul": _judul_pendek(judul or baris[0]), "bg": bg_utama}
     for k, s in enumerate(spec):     # ragam gerak masuk dirotasi biar adegan berurutan nggak monoton
         s.setdefault("var", k)
+    if llm_ok:                        # pass KRITIKUS (multi-agent): review + benerin repetisi/resep/label
+        spec = kritik(cfg, judul, baris, spec, batal=batal, log=log)
+    spec = _paksa_resep(baris, spec)  # jamin resep proses kepakai kalau narasi jelas cocok
     return spec
 
 

@@ -851,7 +851,7 @@ def _kandidat_baru(kand, dipakai, sudah_dipakai, di_adegan_ini, tolak=None):
     tepat = [j for j in belum if (kand[j].get("skor_ai") or 0) >= footage.SKOR_BAGUS]
     # sama tepatnya? yang lisensinya jelas (Wikimedia, museum, web berfilter lisensi) didahulukan dari gambar web biasa
     # klip video asli (+0,5) didahulukan dari foto yang sama tepatnya: gerakan nyata lebih hidup daripada foto
-    tepat.sort(key=lambda j: -(kand[j]["skor_ai"] + 0.8 * footage.suasana(kand[j])
+    tepat.sort(key=lambda j: -(kand[j]["skor_ai"] + 0.8 * footage.estetika(kand[j])
                                + (0.5 if kand[j].get("jenis") == "video" else 0)
                                - (0.6 if kand[j].get("lisensi") == "hak cipta milik pemiliknya" else 0)))
     for j in tepat[:10]:
@@ -868,7 +868,7 @@ def _kandidat_baru(kand, dipakai, sudah_dipakai, di_adegan_ini, tolak=None):
         pinjam = [j for j in range(len(kand)) if kand[j].get("pinjam")]
         if pinjam:
             return pinjam[0]
-    setema.sort(key=lambda j: -(kand[j]["skor_ai"] + 1.0 * footage.suasana(kand[j])))
+    setema.sort(key=lambda j: -(kand[j]["skor_ai"] + 1.0 * footage.estetika(kand[j])))
     for j in setema[:10]:
         if not any(footage.sama_gambar(kand[j], lama) for lama in sudah_dipakai):
             return j
@@ -1134,7 +1134,7 @@ def _rencana_video(p, a, i, frames_adegan, ketat=True):
 
     def nilai(j):
         k = kand[j]
-        return (footage.nilai_latar(k) + 0.6 * footage.suasana(k) + 0.15 * (k.get("skor_h") or 0)
+        return (footage.nilai_latar(k) + 0.6 * footage.estetika(k) + 0.15 * (k.get("skor_h") or 0)
                 - (4 if k.get("cadangan") else 0) - (5 if k.get("pinjam") else 0))
 
     latar = (a.get("q") or {}).get("latar") or ""
@@ -1197,7 +1197,7 @@ def _rencana_video(p, a, i, frames_adegan, ketat=True):
 
     foto = sorted((j for j in range(len(kand)) if tepat(j)),
                   key=lambda j: -((kand[j].get("skor_ai") or 0) + (0.8 if kand[j].get("topik") else 0)
-                                  + 0.5 * footage.suasana(kand[j])))
+                                  + 0.5 * footage.estetika(kand[j])))
     ada_klip = bool(klip)
     if not ada_klip:
         # Tanpa klip sama sekali: tiap foto yang pas tampil sekali, lebih lama (tetap ada zoom/pan). Dulu dipotong
@@ -1580,6 +1580,7 @@ def _render_animasi(p, cfg, batal):
 
 def l_footage(p, cfg, batal):
     o = p["opsi"]
+    footage.MODE_VISUAL = "fakta" if _fakta(p) else "misteri"
     if _animasi(p):
         return _footage_animasi(p, cfg, batal)
     n = len(p["adegan"])
@@ -1865,6 +1866,7 @@ def _teks_layar(p, ada_hook):
 
 def l_render(p, cfg, batal):
     o = p["opsi"]
+    footage.MODE_VISUAL = "fakta" if _fakta(p) else "misteri"
     if _animasi(p):
         return _render_animasi(p, cfg, batal)
     kerja = PROYEK / p["id"] / "render"

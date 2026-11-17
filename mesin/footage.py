@@ -1146,6 +1146,54 @@ def suasana(k):
     return k["suasana"]
 
 
+# "misteri" (konspirasi lama): footage makin gelap/kelam makin bagus (lihat suasana()).
+# "fakta" (video sains): kebalikannya — footage CERAH, BERWARNA, dan TAJAM yang menang, supaya mikroskop
+# grayscale, klip fluoresen di latar hitam, dan smear buram tidak lagi mendominasi video sains.
+MODE_VISUAL = "misteri"
+
+
+def cerah(k):
+    """0..1: seberapa cerah, berwarna, dan terbaca gambarnya. Tinggi = dokumenter/diagram cerah;
+    rendah = grayscale (mikroskop/foto hitam-putih), nyaris hitam (fluoresen), atau buram tak berstruktur."""
+    if "cerah" in k:
+        return k["cerah"]
+    nilai = 0.5
+    try:
+        import cv2
+        import numpy as np
+        t = thumb_lokal(k) if not k.get("file") else None
+        img = cv2.imdecode(np.fromfile(str(t), np.uint8), cv2.IMREAD_COLOR) if t else None
+        if img is not None:
+            img = cv2.resize(img, (128, 128))
+            b, g, r = (img[..., i].astype(np.float32) for i in range(3))
+            rg, yb = np.abs(r - g), np.abs(0.5 * (r + g) - b)
+            colorful = (float(np.sqrt(rg.std() ** 2 + yb.std() ** 2))
+                        + 0.3 * float(np.sqrt(rg.mean() ** 2 + yb.mean() ** 2))) / 255.0
+            terang = float(img.mean()) / 255.0
+            lap = float(cv2.Laplacian(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), cv2.CV_64F).var())  # ketajaman/struktur
+            warna = min(1.0, colorful / 0.35)
+            cahaya = min(1.0, max(0.0, (terang - 0.12) / 0.6))
+            tajam = min(1.0, lap / 400.0)
+            nilai = 0.5 * warna + 0.3 * cahaya + 0.2 * tajam
+            if colorful < 0.05:   # nyaris grayscale: mikroskop elektron, foto arsip hitam-putih, scan medis
+                nilai *= 0.25
+            if terang < 0.12:     # nyaris hitam: klip fluoresen hijau di latar gelap, footage malam pekat
+                nilai *= 0.4
+    except Exception:
+        pass
+    k["cerah"] = round(float(nilai), 3)
+    return k["cerah"]
+
+
+def estetika(k):
+    """Nilai estetika untuk ranking footage, menurut MODE_VISUAL. 'misteri' -> suasana() (0..1, makin kelam makin
+    tinggi). 'fakta' -> 2*cerah-1 ([-1..1], gelap/grayscale jadi NEGATIF) supaya benar-benar turun di ranking,
+    bukan sekadar kalah tipis dari gambar yang sama skornya."""
+    if MODE_VISUAL == "fakta":
+        return 2.0 * cerah(k) - 1.0
+    return suasana(k)
+
+
 def sama_gambar(k1, k2):
     """True kalau dua kandidat sebenarnya foto yang sama (juga versi crop/resize dari sumber berbeda).
     Diuji pada foto Apollo: foto Aldrin asli vs versi crop = 278 titik cocok; foto berbeda paling banyak 7."""

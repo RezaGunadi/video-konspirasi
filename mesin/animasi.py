@@ -72,6 +72,102 @@ def overshoot(t, k=1.7):
     return 1 + (k + 1) * (t - 1) ** 3 + k * (t - 1) ** 2
 
 
+# ---- gerak masuk bervariasi + hiasan (biar tiap adegan beda & nggak kosong) ----
+def _entrance(var, prog, W, H):
+    """var = ragam masuk (dirotasi per adegan); prog = i/(0.45s). Kembalikan (dx, dy, scale_masuk)."""
+    e = ease_out(min(1, prog))
+    v = int(var) % 5
+    if v == 1:
+        return (-0.75 * W) * (1 - e), 0.0, 0.6 + 0.4 * e      # geser dari kiri
+    if v == 2:
+        return (0.75 * W) * (1 - e), 0.0, 0.6 + 0.4 * e       # geser dari kanan
+    if v == 3:
+        return 0.0, (0.55 * H) * (1 - e), 0.7 + 0.3 * e       # naik dari bawah
+    if v == 4:
+        return 0.0, 0.0, 0.2 + 0.8 * e                        # membesar
+    return 0.0, 0.0, overshoot(min(1, prog))                  # pop (overshoot)
+
+
+_HIAS_WARNA = {"gurun": (235, 205, 150), "laut": (180, 222, 245), "langit": (255, 255, 255),
+               "hijau": (195, 232, 175), "tubuh": (242, 185, 195), "angkasa": (255, 247, 214),
+               "malam": (205, 214, 240), "sains": (150, 200, 240)}
+
+
+def _hias(f, i, bg, W, H, seed=0):
+    """Partikel kecil melayang (tema latar) supaya frame nggak kosong & terasa hidup."""
+    d = ImageDraw.Draw(f)
+    rng = np.random.default_rng((seed * 131 + hash(bg)) % 100000)
+    col = _HIAS_WARNA.get(bg, (150, 200, 240))
+    for _ in range(9):
+        bx, by = rng.uniform(0.06, 0.94) * W, rng.uniform(0.08, 0.9) * H
+        ph, sp, amp, rr = rng.uniform(0, 6.28), rng.uniform(0.6, 1.5), rng.uniform(8, 22), rng.uniform(3, 8)
+        x = bx + amp * math.sin(i * 0.05 * sp + ph)
+        y = by + amp * 0.6 * math.cos(i * 0.05 * sp + ph)
+        a = int(70 + 55 * (0.5 + 0.5 * math.sin(i * 0.1 + ph)))
+        _ell(d, x, y, rr, col + (a,))
+
+
+# ---- furnitur bertema (elemen latar kecil biar adegan kerasa "dunia", bukan ikon doang) ----
+def _kaktus(f, x, y, sc):
+    d = ImageDraw.Draw(f)
+    c = (66, 146, 88, 255)
+    d.rounded_rectangle([P(x - 16 * sc, y - 120 * sc), P(x + 16 * sc, y)], radius=int(16 * sc * SS), fill=c)
+    d.rounded_rectangle([P(x - 50 * sc, y - 100 * sc), P(x - 34 * sc, y - 52 * sc)], radius=int(10 * sc * SS), fill=c)
+    d.rounded_rectangle([P(x - 50 * sc, y - 68 * sc), P(x - 18 * sc, y - 52 * sc)], radius=int(10 * sc * SS), fill=c)
+    d.rounded_rectangle([P(x + 34 * sc, y - 110 * sc), P(x + 50 * sc, y - 60 * sc)], radius=int(10 * sc * SS), fill=c)
+    d.rounded_rectangle([P(x + 18 * sc, y - 76 * sc), P(x + 50 * sc, y - 60 * sc)], radius=int(10 * sc * SS), fill=c)
+
+
+def _burung(f, x, y, sc):
+    d = ImageDraw.Draw(f)
+    d.arc([P(x - 30 * sc, y - 16 * sc), P(x, y + 14 * sc)], 200, 340, fill=(44, 52, 72, 255), width=int(4 * SS))
+    d.arc([P(x, y - 16 * sc), P(x + 30 * sc, y + 14 * sc)], 200, 340, fill=(44, 52, 72, 255), width=int(4 * SS))
+
+
+def _ikan(f, x, y, sc):
+    d = ImageDraw.Draw(f)
+    c = (255, 150, 70, 255)
+    _ell(d, x, y, 26 * sc, c)
+    d.polygon([P(x + 20 * sc, y), P(x + 44 * sc, y - 16 * sc), P(x + 44 * sc, y + 16 * sc)], fill=c)
+    _ell(d, x - 8 * sc, y - 4 * sc, 4 * sc, (20, 20, 20, 255))
+
+
+def _pohon_kecil(f, x, y, sc=1.0):
+    d = ImageDraw.Draw(f)
+    d.rounded_rectangle([P(x - 10 * sc, y - 48 * sc), P(x + 10 * sc, y)], radius=int(5 * sc * SS), fill=(120, 85, 55, 255))
+    _ell(d, x - 26 * sc, y - 52 * sc, 30 * sc, (78, 158, 92, 255))
+    _ell(d, x + 26 * sc, y - 52 * sc, 30 * sc, (78, 158, 92, 255))
+    _ell(d, x, y - 72 * sc, 40 * sc, (90, 170, 100, 255))
+
+
+def _matahari_kecil(f, x, y, r):
+    d = ImageDraw.Draw(f)
+    for k in range(10):
+        a = k / 10 * 6.283
+        d.line([P(x + math.cos(a) * r * 1.25, y + math.sin(a) * r * 1.25),
+                P(x + math.cos(a) * r * 1.55, y + math.sin(a) * r * 1.55)], fill=SUN + (255,), width=int(5 * SS))
+    _ell(d, x, y, r, SUN + (255,))
+    _ell(d, x - r * 0.25, y - r * 0.25, r * 0.5, SUN_CORE + (255,))
+
+
+def _furnitur(f, i, bg, W, H):
+    t = i / FPS
+    if bg == "gurun":
+        _matahari_kecil(f, W * 0.82, H * 0.15, 58)
+        _kaktus(f, W * 0.1, H * 0.82, 1.0)
+        _kaktus(f, W * 0.9, H * 0.9, 0.7)
+    elif bg == "langit":
+        _matahari_kecil(f, W * 0.8, H * 0.14, 56)
+        for k, bx in enumerate((0.22, 0.42, 0.3)):
+            _burung(f, (bx + 0.08 * math.sin(t * 0.4 + k)) * W, (0.3 + 0.05 * k) * H, 0.7 + 0.2 * k)
+    elif bg == "laut":
+        for k in range(3):
+            _ikan(f, ((0.16 + 0.3 * k) + 0.06 * math.sin(t * 0.8 + k)) * W, (0.72 + 0.06 * k) * H, 1 - 0.15 * k)
+    elif bg == "hijau":
+        _pohon_kecil(f, W * 0.1, H * 0.82, 1.1)
+        _pohon_kecil(f, W * 0.9, H * 0.86, 0.9)
+
+
 _FONTS = {}
 
 
@@ -610,36 +706,51 @@ class Orbit(Adegan):
 
 
 class Sorot(Adegan):
-    """Sorot 1 aset di tengah (pop-in overshoot + float), label di bawah. Aset apa pun dari ASET."""
+    """Sorot 1 aset: masuk bervariasi (pop/geser/naik/membesar) + idle bob + partikel hias + label slide."""
     def gambar(self, f, i):
         self.taburi_bintang(f, i / FPS)
-        t = min(1, (i + 1) / (0.45 * FPS))
-        sc = overshoot(t) * (1 + 0.03 * math.sin(i * 0.12))
-        cx, cy = self.W / 2, self.H * 0.44
-        ASET.get(self.p.get("aset", "lampu"), ASET["lampu"])(f, cx, cy, sc, i / FPS)
+        _furnitur(f, i, self.bg, self.W, self.H)
+        _hias(f, i, self.bg, self.W, self.H, seed=abs(hash(self.p.get("aset", ""))) % 1000)
+        t, prog = i / FPS, i / (0.45 * FPS)
+        settle = min(1, prog)
+        dx, dy, esc = _entrance(self.p.get("var", 0), prog, self.W, self.H)
+        cx = self.W / 2 + dx
+        cy = self.H * 0.44 + dy + 10 * math.sin(t * 2.2) * settle
+        sc = esc * 1.28 * (1 + 0.03 * math.sin(t * 1.7) * settle)
+        ASET.get(self.p.get("aset", "lampu"), ASET["lampu"])(f, cx, cy, sc, t)
         if self.p.get("label"):
-            kartu_label(f, self.p["label"], self.W / 2, self.H * 0.72)
+            lp = ease_out(min(1, max(0, (i - 0.2 * FPS) / (0.3 * FPS))))
+            if lp > 0:
+                kartu_label(f, self.p["label"], self.W / 2, self.H * 0.74 + 36 * (1 - lp))
 
 
 class Banding(Adegan):
-    """Dua aset dibanding (kiri vs kanan) + 'VS'."""
+    """Dua aset masuk dari sisi berlawanan + 'VS' yang nge-pop + partikel hias."""
     def gambar(self, f, i):
         self.taburi_bintang(f, i / FPS)
-        sc = overshoot(min(1, (i + 1) / (0.4 * FPS))) * 0.8
-        for key, lab, fx in (("kiri", "label_kiri", 0.3), ("kanan", "label_kanan", 0.7)):
-            cx = self.W * fx
-            ASET.get(self.p.get(key, "lampu"), ASET["lampu"])(f, cx, self.H * 0.42, sc, i / FPS)
-            if self.p.get(lab):
-                kartu_label(f, self.p[lab], cx, self.H * 0.64, px=44)
-        teks(f, "VS", self.W / 2, self.H * 0.42, 72, fill=ACCENT_Y)
+        _furnitur(f, i, self.bg, self.W, self.H)
+        _hias(f, i, self.bg, self.W, self.H, seed=321)
+        t = i / FPS
+        e = ease_out(min(1, i / (0.45 * FPS)))
+        for key, lab, fx, arah in (("kiri", "label_kiri", 0.28, -1), ("kanan", "label_kanan", 0.72, 1)):
+            cx = self.W * fx + arah * (0.5 * self.W) * (1 - e)
+            cy = self.H * 0.42 + 8 * math.sin(t * 2 + (0 if arah < 0 else 1.5))
+            ASET.get(self.p.get(key, "lampu"), ASET["lampu"])(f, cx, cy, 0.78 * (0.6 + 0.4 * e), t)
+            if self.p.get(lab) and e > 0.5:
+                kartu_label(f, self.p[lab], self.W * fx, self.H * 0.66, px=44)
+        teks(f, "VS", self.W / 2, self.H * 0.42, 74 * overshoot(min(1, i / (0.5 * FPS))), fill=ACCENT_Y)
 
 
 class Maskot(Adegan):
     def gambar(self, f, i):
         self.taburi_bintang(f, i / FPS)
-        cy = self.H * 0.6 + 10 * math.sin(i * 0.12)
+        _furnitur(f, i, self.bg, self.W, self.H)
+        _hias(f, i, self.bg, self.W, self.H, seed=77)
+        t = i / FPS
+        naik = ease_out(min(1, i / (0.4 * FPS)))
+        cy = self.H * 0.6 + 10 * math.sin(t * 2) + (0.3 * self.H) * (1 - naik)
         maskot(f, self.W / 2, cy, 1.0, wave=i * 0.5)
-        if self.p.get("teks"):
+        if self.p.get("teks") and naik > 0.6:
             gelembung(f, self.p["teks"], self.W / 2, self.H * 0.3)
 
 
@@ -822,6 +933,8 @@ def sutradara(cfg, judul, baris, batal=None, log=print):
             s["bg"] = "angkasa" if s["tipe"] in ("roket", "orbit") else bg_utama
             spec[i] = s
     spec[0] = {"tipe": "judul", "judul": _judul_pendek(judul or baris[0]), "bg": bg_utama}
+    for k, s in enumerate(spec):     # ragam gerak masuk dirotasi biar adegan berurutan nggak monoton
+        s.setdefault("var", k)
     return spec
 
 

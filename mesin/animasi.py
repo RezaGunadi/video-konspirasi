@@ -92,20 +92,79 @@ def teks(frame, s, cx, cy, px, fill=TEXT, anchor="mm", stroke=(10, 14, 30)):
                      stroke_width=max(2, int(px * SS * 0.07)), stroke_fill=stroke + (255,))
 
 
-# ======================================================================= latar & bintang
+# ======================================================================= latar BERTEMA & bintang
+# tiap tema: gradien (top->bot) + berbintang? + foreground statis opsional. Dipilih director per adegan ('bg').
+_TEMA = {
+    "angkasa": {"top": (26, 32, 70), "bot": (9, 12, 32), "bintang": True, "fg": None},
+    "malam":   {"top": (22, 28, 58), "bot": (8, 10, 26), "bintang": True, "fg": "bulan_pojok"},
+    "gurun":   {"top": (216, 138, 72), "bot": (120, 78, 52), "bintang": False, "fg": "dunes"},
+    "langit":  {"top": (86, 148, 212), "bot": (150, 196, 234), "bintang": False, "fg": "awan"},
+    "laut":    {"top": (60, 132, 186), "bot": (18, 68, 118), "bintang": False, "fg": "ombak"},
+    "hijau":   {"top": (92, 156, 96), "bot": (48, 108, 62), "bintang": False, "fg": "bukit"},
+    "sains":   {"top": (44, 74, 104), "bot": (20, 42, 68), "bintang": False, "fg": None},
+    "tubuh":   {"top": (158, 74, 84), "bot": (92, 42, 58), "bintang": False, "fg": None},
+}
+_STARTEMA = {k for k, v in _TEMA.items() if v["bintang"]}
 _BG = {}
 _STAR = {}
 
 
-def latar(fmt):
-    if fmt not in _BG:
-        W, H = UK[fmt]
-        yv = np.linspace(0, 1, H * SS)
-        top, bot = np.array(SPACE_TOP, float), np.array(SPACE_BOT, float)
-        col = top[None, :] * (1 - yv)[:, None] + bot[None, :] * yv[:, None]
-        arr = np.repeat(col[:, None, :], W * SS, axis=1).astype(np.uint8)
-        _BG[fmt] = Image.fromarray(arr, "RGB").convert("RGBA")
-    return _BG[fmt].copy()
+def _grad(fmt, top, bot):
+    W, H = UK[fmt]
+    yv = np.linspace(0, 1, H * SS)
+    col = np.array(top, float)[None, :] * (1 - yv)[:, None] + np.array(bot, float)[None, :] * yv[:, None]
+    arr = np.repeat(col[:, None, :], W * SS, axis=1).astype(np.uint8)
+    return Image.fromarray(arr, "RGB").convert("RGBA")
+
+
+def _fg_dunes(f, fmt):
+    W, H = UK[fmt]
+    d = ImageDraw.Draw(f)
+    for yy, c in ((0.80, (150, 100, 62)), (0.88, (176, 122, 74)), (0.96, (205, 150, 92))):
+        d.ellipse([P(-W * 0.3, H * yy), P(W * 1.35, H * (yy + 0.55))], fill=c + (255,))
+
+
+def _fg_awan(f, fmt):
+    W, H = UK[fmt]
+    d = ImageDraw.Draw(f)
+    for cx, cy, r in ((0.22, 0.17, 0.095), (0.72, 0.11, 0.12), (0.5, 0.25, 0.075)):
+        for dx in (-1, 0, 1):
+            _ell(d, W * cx + dx * r * W * 0.75, H * cy, r * W, (255, 255, 255, 235))
+
+
+def _fg_ombak(f, fmt):
+    W, H = UK[fmt]
+    d = ImageDraw.Draw(f)
+    for k in range(4):
+        yy = H * (0.62 + k * 0.095)
+        d.line([P(x, yy + 10 * math.sin(x * 0.012 + k)) for x in range(0, W + 20, 20)],
+               fill=(255, 255, 255, 55), width=int(5 * SS))
+
+
+def _fg_bukit(f, fmt):
+    W, H = UK[fmt]
+    d = ImageDraw.Draw(f)
+    for yy, c in ((0.80, (58, 118, 70)), (0.90, (80, 150, 86))):
+        d.ellipse([P(-W * 0.3, H * yy), P(W * 1.35, H * (yy + 0.6))], fill=c + (255,))
+
+
+def _fg_bulan_pojok(f, fmt):
+    W, H = UK[fmt]
+    bulan(f, W * 0.8, H * 0.15, 88)
+
+
+_FG = {"dunes": _fg_dunes, "awan": _fg_awan, "ombak": _fg_ombak, "bukit": _fg_bukit, "bulan_pojok": _fg_bulan_pojok}
+
+
+def latar(fmt, tema="angkasa"):
+    key = (fmt, tema if tema in _TEMA else "angkasa")
+    if key not in _BG:
+        t = _TEMA[key[1]]
+        f = _grad(fmt, t["top"], t["bot"])
+        if t["fg"]:
+            _FG[t["fg"]](f, fmt)
+        _BG[key] = f
+    return _BG[key].copy()
 
 
 def _stars(fmt):
@@ -443,6 +502,7 @@ class Adegan:
     def __init__(self, n, p, fmt):
         self.n, self.p, self.fmt = n, p or {}, fmt
         self.W, self.H = UK[fmt]
+        self.bg = (p or {}).get("bg") if (p or {}).get("bg") in _TEMA else "angkasa"
         self._statis = None
 
     def statis(self):
@@ -451,7 +511,11 @@ class Adegan:
         return self._statis.copy()
 
     def bangun_statis(self):
-        return latar(self.fmt)
+        return latar(self.fmt, self.bg)
+
+    def taburi_bintang(self, f, t):
+        if self.bg in _STARTEMA:
+            bintang(f, self.fmt, t)
 
     def frame(self, i):
         f = self.statis()
@@ -464,11 +528,13 @@ class Adegan:
 
 class Judul(Adegan):
     def gambar(self, f, i):
-        bintang(f, self.fmt, i / FPS)
+        self.taburi_bintang(f, i / FPS)
         t = min(1, (i + 1) / (0.5 * FPS))
         sc = overshoot(t)
         flo = 1 + 0.015 * math.sin(i * 0.1)
-        teks(f, self.p.get("judul", "JUDUL"), self.W / 2, self.H * 0.42, 86 * sc * flo)
+        s = _judul_pendek(self.p.get("judul", "SAINS"))
+        px = _fit_px(f, s, self.W * 0.84, 82)
+        teks(f, s, self.W / 2, self.H * 0.40, px * sc * flo)
         wlen = min(1, max(0, (i - 0.3 * FPS) / (0.5 * FPS)))
         if wlen > 0:
             w = self.W * 0.3 * ease_out(wlen)
@@ -478,7 +544,8 @@ class Judul(Adegan):
 
 class Roket(Adegan):
     def bangun_statis(self):
-        f = latar(self.fmt)
+        self.bg = "angkasa"
+        f = latar(self.fmt, "angkasa")
         bulan(f, self.W * 0.77, self.H * 0.19, 105)
         planet(f, self.W / 2, self.H * 1.07, self.W * 0.83, seed=3)
         return f
@@ -487,7 +554,7 @@ class Roket(Adegan):
         if getattr(self, "_i", None) != i - 1:
             self._smoke = []
         self._i = i
-        bintang(f, self.fmt, i / FPS)
+        self.taburi_bintang(f, i / FPS)
         tt = i / max(1, self.n - 1)
         p = 0.0 if tt < 0.12 else ((tt - 0.12) / 0.88) ** 1.7
         cy = self.H * 0.78 + (self.H * 0.16 - self.H * 0.78) * p
@@ -522,7 +589,8 @@ class Orbit(Adegan):
                 "bumi": lambda f, cx, cy: planet(f, cx, cy, 60, seed=5)}
 
     def bangun_statis(self):
-        f = latar(self.fmt)
+        self.bg = "angkasa"
+        f = latar(self.fmt, "angkasa")
         cx, cy = self.W / 2, self.H / 2
         R = self.W * 0.34
         ImageDraw.Draw(f).ellipse([P(cx - R, cy - R * 0.42), P(cx + R, cy + R * 0.42)],
@@ -531,7 +599,7 @@ class Orbit(Adegan):
         return f
 
     def gambar(self, f, i):
-        bintang(f, self.fmt, i / FPS)
+        self.taburi_bintang(f, i / FPS)
         cx, cy = self.W / 2, self.H / 2
         R = self.W * 0.34
         ang = i / self.n * 6.283 * 1.3 - 1.57
@@ -544,7 +612,7 @@ class Orbit(Adegan):
 class Sorot(Adegan):
     """Sorot 1 aset di tengah (pop-in overshoot + float), label di bawah. Aset apa pun dari ASET."""
     def gambar(self, f, i):
-        bintang(f, self.fmt, i / FPS)
+        self.taburi_bintang(f, i / FPS)
         t = min(1, (i + 1) / (0.45 * FPS))
         sc = overshoot(t) * (1 + 0.03 * math.sin(i * 0.12))
         cx, cy = self.W / 2, self.H * 0.44
@@ -556,7 +624,7 @@ class Sorot(Adegan):
 class Banding(Adegan):
     """Dua aset dibanding (kiri vs kanan) + 'VS'."""
     def gambar(self, f, i):
-        bintang(f, self.fmt, i / FPS)
+        self.taburi_bintang(f, i / FPS)
         sc = overshoot(min(1, (i + 1) / (0.4 * FPS))) * 0.8
         for key, lab, fx in (("kiri", "label_kiri", 0.3), ("kanan", "label_kanan", 0.7)):
             cx = self.W * fx
@@ -568,7 +636,7 @@ class Banding(Adegan):
 
 class Maskot(Adegan):
     def gambar(self, f, i):
-        bintang(f, self.fmt, i / FPS)
+        self.taburi_bintang(f, i / FPS)
         cy = self.H * 0.6 + 10 * math.sin(i * 0.12)
         maskot(f, self.W / 2, cy, 1.0, wave=i * 0.5)
         if self.p.get("teks"):
@@ -612,6 +680,25 @@ _KW = [
 ]
 
 
+_KW_BG = [
+    (r"gurun|pasir|sahara|atacama|tandus", "gurun"),
+    (r"laut|samudra|lautan|ombak|pantai|bawah air|ikan|terumbu|pesisir", "laut"),
+    (r"hutan|pohon|daun|tumbuhan|savana|rumput|tanaman", "hijau"),
+    (r"langit|awan|hujan|atmosfer|terbang|burung|badai", "langit"),
+    (r"malam|gelap|nokturnal|tidur|senja", "malam"),
+    (r"planet|antariksa|ruang angkasa|orbit|galaksi|roket|\bbulan\b|matahari|venus|mars|bintang|komet|meteor", "angkasa"),
+    (r"\bsel\b|tubuh|organ|darah|jantung|otak|\bdna\b|penuaan|bakteri|virus|saraf|paru", "tubuh"),
+]
+
+
+def _keyword_bg(teks, default="sains"):
+    t = (teks or "").lower()
+    for pat, bg in _KW_BG:
+        if re.search(pat, t):
+            return bg
+    return default
+
+
 def _keyword_spec(teks):
     t = (teks or "").lower()
     for pat, spec in _KW:
@@ -625,40 +712,57 @@ def _keyword_spec(teks):
     return {"tipe": "sorot", "aset": "lampu", "label": "FAKTA"}
 
 
-def _judul_pendek(t):
+def _judul_pendek(t, per_baris=15):
+    """Bungkus judul ke baris pendek (±15 char) biar muat di frame; buang kata sambung sisa kalau kepanjangan."""
     t = re.sub(r"[^\w\s?!]", "", t or "").strip().upper()
-    w = t.split()
-    if len(w) > 3:
-        mid = (len(w) + 1) // 2
-        t = " ".join(w[:mid]) + "\n" + " ".join(w[mid:])
-    return t or "SAINS"
+    baris, cur = [], ""
+    for w in t.split():
+        if cur and len(cur) + 1 + len(w) > per_baris:
+            baris.append(cur)
+            cur = w
+        else:
+            cur = (cur + " " + w).strip()
+    if cur:
+        baris.append(cur)
+    return "\n".join(baris[:4]) or "SAINS"
 
 
-def _bersihkan_spec(a, teks):
-    """Validasi 1 spec dari LLM; jatuh ke keyword kalau tak valid."""
+def _fit_px(frame, s, maks_lebar, base_px):
+    """Kecilin font kalau baris terpanjang lebih lebar dari maks_lebar (koordinat final px)."""
+    d = ImageDraw.Draw(frame)
+    panjang = max((d.textlength(b, font=_huruf(base_px)) for b in s.split("\n")), default=0)
+    batas = maks_lebar * SS
+    return base_px if panjang <= batas or panjang == 0 else max(30, base_px * batas / panjang)
+
+
+def _bersihkan_spec(a, teks, bg_default="sains"):
+    """Validasi 1 spec dari LLM; jatuh ke keyword kalau tak valid. Sisipkan 'bg' (tema latar)."""
+    bg = a.get("bg") if a.get("bg") in _TEMA else bg_default
     tipe = a.get("tipe")
     if tipe not in TEMPLATE:
-        return _keyword_spec(teks)
+        s = _keyword_spec(teks)
+        s["bg"] = bg
+        return s
     lab = (a.get("label") or "").strip().upper()[:16]
     if tipe == "sorot":
         aset = a.get("aset") if a.get("aset") in ASET else (_keyword_spec(teks).get("aset") or "lampu")
         # label jangan sekadar nama aset (mis. "TETES_AIR"/"HEWAN") → pakai label bersih
         if not lab or lab.lower().replace(" ", "_") == aset.lower():
             lab = _ASET_LABEL.get(aset, aset.upper())
-        return {"tipe": "sorot", "aset": aset, "label": lab}
+        return {"tipe": "sorot", "aset": aset, "label": lab, "bg": bg}
     if tipe == "banding":
         ki = a.get("kiri") if a.get("kiri") in ASET else None
         ka = a.get("kanan") if a.get("kanan") in ASET else None
         if not ki or not ka or ki == ka:   # banding tak valid → jatuh ke sorot
             aset = ki or ka or (_keyword_spec(teks).get("aset") or "lampu")
-            return {"tipe": "sorot", "aset": aset, "label": lab or _ASET_LABEL.get(aset, aset.upper())}
-        return {"tipe": "banding", "kiri": ki, "kanan": ka,
+            return {"tipe": "sorot", "aset": aset, "label": lab or _ASET_LABEL.get(aset, aset.upper()), "bg": bg}
+        return {"tipe": "banding", "kiri": ki, "kanan": ka, "bg": bg,
                 "label_kiri": _ASET_LABEL.get(ki, ki.upper()), "label_kanan": _ASET_LABEL.get(ka, ka.upper())}
     if tipe == "orbit":
-        return {"tipe": "orbit", "pusat": "bumi", "keliling": "bulan", "label": lab or "ORBIT"}
+        return {"tipe": "orbit", "pusat": "bumi", "keliling": "bulan", "label": lab or "ORBIT", "bg": "angkasa"}
     if tipe == "maskot":
-        return {"tipe": "maskot", "teks": (a.get("label") or "Hmm…")[:24]}
-    return {"tipe": "judul", "judul": _judul_pendek(lab or teks)}
+        return {"tipe": "maskot", "teks": (a.get("label") or "Hmm…")[:24], "bg": bg}
+    return {"tipe": "judul", "judul": _judul_pendek(lab or teks), "bg": bg}
 
 
 def sutradara(cfg, judul, baris, batal=None, log=print):
@@ -666,6 +770,8 @@ def sutradara(cfg, judul, baris, batal=None, log=print):
     Pakai gemma (structured JSON); fallback aturan keyword per baris. Baris pertama selalu 'judul'."""
     n = len(baris)
     spec = [None] * n
+    bg_utama = _keyword_bg(f"{judul} {' '.join(baris)}")   # tema latar default dari topik
+    tema_keys = list(_TEMA.keys())
     try:
         from . import ollama
         cfg = dict(cfg)
@@ -683,29 +789,39 @@ def sutradara(cfg, judul, baris, batal=None, log=print):
                "Untuk 'sorot' pilih 'aset'; untuk 'banding' WAJIB isi 'kiri' DAN 'kanan' dengan DUA aset BERBEDA; "
                "dari daftar aset ini saja: " + ", ".join(keys) + ".\n"
                "'label' = 1-2 kata HURUF BESAR, pakai kata PALING SPESIFIK dari kalimat (mis. 'UNTA', 'HELIUM', "
-               "'GURUN', 'VENUS'). JANGAN pakai nama aset sebagai label (jangan 'HEWAN'/'TETES_AIR'); "
-               "kalau kalimat nyebut benda/subjek spesifik, itu yang jadi label.\n"
+               "'GURUN', 'VENUS'). JANGAN pakai nama aset sebagai label (jangan 'HEWAN'/'TETES_AIR').\n"
+               "'bg_utama' = tema latar UTAMA video (konsisten) dari: " + ", ".join(tema_keys) + " "
+               "(angkasa=ruang/planet, gurun=pasir, langit=awan/udara, laut=air/laut, hijau=alam/hutan, "
+               "malam, sains=netral/fisika/kimia, tubuh=biologi/organ). Tiap adegan boleh kasih 'bg' sendiri "
+               "kalau beda jauh, kalau nggak kosongkan (ikut bg_utama).\n"
                "Keluarkan TEPAT satu adegan per kalimat, urut sama.")
         isi = f"Judul: {judul}\n\nKalimat narasi:\n" + "\n".join(f"{i + 1}. {t}" for i, t in enumerate(baris))
-        schema = {"type": "object", "properties": {"adegan": {"type": "array", "items": {"type": "object",
+        schema = {"type": "object", "properties": {
+                  "bg_utama": {"type": "string", "enum": tema_keys},
+                  "adegan": {"type": "array", "items": {"type": "object",
                   "properties": {"tipe": {"type": "string", "enum": list(TEMPLATE)},
                                  "aset": {"type": "string", "enum": keys},
                                  "kiri": {"type": "string", "enum": keys},
                                  "kanan": {"type": "string", "enum": keys},
+                                 "bg": {"type": "string", "enum": tema_keys},
                                  "label": {"type": "string"}}, "required": ["tipe", "label"]}}},
-                  "required": ["adegan"]}
+                  "required": ["bg_utama", "adegan"]}
         j = ollama.chat_json(cfg, [{"role": "system", "content": sis}, {"role": "user", "content": isi}],
-                             schema, batal=batal, maks_token=50 * n + 200, suhu=0.4)
+                             schema, batal=batal, maks_token=55 * n + 220, suhu=0.4)
+        if (j or {}).get("bg_utama") in _TEMA:
+            bg_utama = j["bg_utama"]
         arr = (j or {}).get("adegan") or []
         for i in range(min(n, len(arr))):
-            spec[i] = _bersihkan_spec(arr[i], baris[i])
-        log(f"  🎬 Sutradara AI: {sum(1 for s in spec if s)}/{n} adegan dipilih gemma")
+            spec[i] = _bersihkan_spec(arr[i], baris[i], bg_utama)
+        log(f"  🎬 Sutradara AI: {sum(1 for s in spec if s)}/{n} adegan (tema latar: {bg_utama})")
     except Exception as e:
-        log(f"  Sutradara AI gagal ({str(e)[:70]}) — pakai aturan keyword")
+        log(f"  Sutradara AI gagal ({str(e)[:70]}) — pakai aturan keyword (tema {bg_utama})")
     for i in range(n):
         if not spec[i]:
-            spec[i] = _keyword_spec(baris[i])
-    spec[0] = {"tipe": "judul", "judul": _judul_pendek(judul or baris[0])}
+            s = _keyword_spec(baris[i])
+            s["bg"] = "angkasa" if s["tipe"] in ("roket", "orbit") else bg_utama
+            spec[i] = s
+    spec[0] = {"tipe": "judul", "judul": _judul_pendek(judul or baris[0]), "bg": bg_utama}
     return spec
 
 

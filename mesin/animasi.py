@@ -768,22 +768,35 @@ class Orbit(Adegan):
 
 
 class Sorot(Adegan):
-    """Sorot 1 aset: masuk bervariasi (pop/geser/naik/membesar) + idle bob + partikel hias + label slide."""
+    """Komposisi: aset UTAMA + 1-3 elemen pendukung (objek relevan dari kalimat), masuk bergiliran + gerak.
+    Biar tiap layar RAME & NYAMBUNG (bukan 1 objek di bg kosong)."""
+    _POS = [(0.2, 0.33), (0.8, 0.35), (0.5, 0.7), (0.18, 0.66)]
+
     def gambar(self, f, i):
         self.taburi_bintang(f, i / FPS)
         _furnitur(f, i, self.bg, self.W, self.H, self.p.get("var", 0))
         _hias(f, i, self.bg, self.W, self.H, seed=abs(hash(self.p.get("aset", ""))) % 1000)
         t, prog = i / FPS, i / (0.45 * FPS)
         settle = min(1, prog)
+        main = self.p.get("aset", "lampu")
+        elemen = [e for e in (self.p.get("elemen") or []) if e in ASET and e != main][:4]
+        # elemen pendukung: masuk bergiliran (stagger) + ngambang beda-beda fase
+        for k, e in enumerate(elemen):
+            ep = ease_out(min(1, max(0, (i - (0.3 + k * 0.16) * FPS) / (0.4 * FPS))))
+            if ep <= 0:
+                continue
+            ex, ey = self._POS[k]
+            ASET[e](f, self.W * ex + 12 * math.sin(t * 1.3 + k), self.H * ey + 16 * math.sin(t * 1.9 + k * 1.3),
+                    ep * 0.5 * (1 + 0.06 * math.sin(t * 2 + k)), t)
+        # aset utama (lebih kecil kalau ada elemen, biar muat) + entrance + idle
         dx, dy, esc = _entrance(self.p.get("var", 0), prog, self.W, self.H)
-        cx = self.W / 2 + dx
-        cy = self.H * 0.44 + dy + 10 * math.sin(t * 2.2) * settle
-        sc = esc * 1.28 * (1 + 0.03 * math.sin(t * 1.7) * settle)
-        ASET.get(self.p.get("aset", "lampu"), ASET["lampu"])(f, cx, cy, sc, t)
+        cx, cy = self.W / 2 + dx, self.H * 0.45 + dy + 10 * math.sin(t * 2.2) * settle
+        sc = esc * (1.0 if elemen else 1.28) * (1 + 0.03 * math.sin(t * 1.7) * settle)
+        ASET.get(main, ASET["lampu"])(f, cx, cy, sc, t)
         if self.p.get("label"):
             lp = ease_out(min(1, max(0, (i - 0.2 * FPS) / (0.3 * FPS))))
             if lp > 0:
-                kartu_label(f, self.p["label"], self.W / 2, self.H * 0.74 + 36 * (1 - lp))
+                kartu_label(f, self.p["label"], self.W / 2, self.H * 0.88 + 36 * (1 - lp))
 
 
 class Banding(Adegan):
@@ -1081,7 +1094,8 @@ def _bersihkan_spec(a, teks, bg_default="sains"):
         # label jangan sekadar nama aset (mis. "TETES_AIR"/"HEWAN") → pakai label bersih
         if not lab or lab.lower().replace(" ", "_") == aset.lower():
             lab = _ASET_LABEL.get(aset, aset.upper())
-        return {"tipe": "sorot", "aset": aset, "label": lab, "bg": bg}
+        elemen = [e for e in (a.get("elemen") or []) if e in ASET and e != aset][:4]
+        return {"tipe": "sorot", "aset": aset, "elemen": elemen, "label": lab, "bg": bg}
     if tipe == "banding":
         ki = a.get("kiri") if a.get("kiri") in ASET else None
         ka = a.get("kanan") if a.get("kanan") in ASET else None
@@ -1247,8 +1261,10 @@ def sutradara(cfg, judul, baris, batal=None, log=print):
                "panas di siang & dingin/beku di malam); 'hujan'=awan + HUJAN TURUN (kalimat soal hujan/mendung); "
                "'bayangan_hujan'=2 gunung apit gurun, awan keblok gunung → hujan di 1 sisi, gurun kering (kalimat soal "
                "gunung menghalangi awan/hujan atau gurun diapit pegunungan).\n"
-               "Untuk 'sorot' pilih 'aset'; 'banding' WAJIB 'kiri'+'kanan' DUA aset BEDA; 'foto' WAJIB isi 'query' "
-               "Inggris spesifik (mis. 'atacama desert landscape'). Aset dari daftar ini saja: " + ", ".join(keys) + ".\n"
+               "Untuk 'sorot' pilih 'aset' UTAMA + 'elemen' = 1-3 aset PENDUKUNG lain yang relevan/disebut di kalimat "
+               "(biar adegan RAME & NYAMBUNG, bukan 1 objek; mis. 'matahari memanggang pasir panas' → aset:matahari, "
+               "elemen:[panas,termometer]). 'banding' WAJIB 'kiri'+'kanan' DUA aset BEDA; 'foto' WAJIB 'query' "
+               "Inggris spesifik. Aset dari daftar ini saja: " + ", ".join(keys) + ".\n"
                "VARIASI: jangan ngulang 'banding'/'maskot' berturut-turut; mayoritas 'sorot' dengan aset BEDA-BEDA; "
                "pakai 'foto' hemat (1-3x/video, buat establishing shot). Kalau NGGAK ADA aset yang pas buat subjek, "
                "pakai 'foto' (query real) — JANGAN maksa aset yang salah makna (mis. jangan 'bumi' buat gunung).\n"
@@ -1265,6 +1281,7 @@ def sutradara(cfg, judul, baris, batal=None, log=print):
                   "adegan": {"type": "array", "items": {"type": "object",
                   "properties": {"tipe": {"type": "string", "enum": list(TEMPLATE) + ["foto"]},
                                  "aset": {"type": "string", "enum": keys},
+                                 "elemen": {"type": "array", "items": {"type": "string", "enum": keys}},
                                  "kiri": {"type": "string", "enum": keys},
                                  "kanan": {"type": "string", "enum": keys},
                                  "query": {"type": "string"},

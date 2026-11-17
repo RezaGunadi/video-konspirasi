@@ -1186,20 +1186,36 @@ def _paksa_resep(baris, spec):
 
 
 def _rapikan(baris, spec):
-    """Pembersihan deterministik (pengganti LLM-kritikus yang suka ngacak): label jelek dibenerin + dedup repetisi."""
+    """Pembersihan deterministik (pengganti LLM-kritikus yang ngacak): label bersih + maskot cuma penutup + dedup."""
     keyset = {k.lower() for k in ASET}
+    n = len(spec)
+    # 1) label 'sorot' bersih (bukan gabungan nama aset / '+' / kepanjangan)
     for s in spec:
         if s.get("tipe") == "sorot":
             lab, aset = (s.get("label") or "").strip(), s.get("aset", "lampu")
             if (not lab) or ("+" in lab) or (lab.lower() in keyset) or (lab.lower().replace(" ", "_") in keyset) or len(lab) > 16:
                 s["label"] = _ASET_LABEL.get(aset, aset.upper())
-    # dedup: 2 adegan beruntun tipe+aset sama → ganti aset ke-2 dari keyword narasinya
-    for i in range(1, len(spec)):
+    # 2) maskot cuma di adegan TERAKHIR (penutup); maskot di tengah → jadi sorot
+    for i in range(1, n - 1):
+        if spec[i].get("tipe") == "maskot":
+            s = _keyword_spec(baris[i])
+            s["bg"], s["var"] = spec[i].get("bg", "sains"), spec[i].get("var", i)
+            spec[i] = s
+    if n and spec[-1].get("tipe") == "maskot":    # CTA penutup yang bener (bukan "MASKOT")
+        tk = (spec[-1].get("teks") or "").strip()
+        if (not tk) or tk.lower() in keyset or tk.lower() in ("maskot", "") or len(tk) > 22:
+            spec[-1]["teks"] = "Subscribe ya!"
+    # 3) dedup: 2 adegan beruntun yang sama → variasikan yang ke-2
+    for i in range(1, n):
         a, b = spec[i - 1], spec[i]
         if a.get("tipe") == b.get("tipe") == "sorot" and a.get("aset") == b.get("aset"):
             alt = _keyword_spec(baris[i]).get("aset")
             if alt and alt != b.get("aset"):
                 b["aset"], b["label"] = alt, _ASET_LABEL.get(alt, alt.upper())
+        elif a.get("tipe") == b.get("tipe") == "banding":   # banding beruntun → ke-2 jadi sorot
+            ki = b.get("kiri") if b.get("kiri") in ASET else "lampu"
+            spec[i] = {"tipe": "sorot", "aset": ki, "label": _ASET_LABEL.get(ki, ki.upper()),
+                       "bg": b.get("bg", "sains"), "var": b.get("var", i)}
     return spec
 
 

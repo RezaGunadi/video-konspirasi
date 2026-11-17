@@ -16,7 +16,7 @@ import time
 import traceback
 from pathlib import Path
 
-from . import (config, efek, footage, hidup, maskot, naskah, recreate, render, riset, suara, suara_mirip,
+from . import (animasi, config, efek, footage, hidup, maskot, naskah, recreate, render, riset, suara, suara_mirip,
                suara_saya)
 from .alat import (INPUT, OUTPUT, PROYEK, Batal, Dibatalkan, baca_json, ffmpeg, hash_pendek, probe, slug,
                    tulis_json)
@@ -98,7 +98,7 @@ def _opsi_bersih(opsi):
     hasil["cta"] = " ".join(str(hasil.get("cta") or "").split())[:220]
     hasil["suara_alami"] = bool(hasil["suara_alami"])
     hasil["animasi"] = hasil["animasi"] if hasil["animasi"] in ("hidup", "zoom") else "hidup"
-    hasil["visual"] = hasil["visual"] if hasil["visual"] in ("video_stiker", "klasik") else "video_stiker"
+    hasil["visual"] = hasil["visual"] if hasil["visual"] in ("video_stiker", "klasik", "animasi") else "video_stiker"
     hasil["gaya"] = hasil["gaya"] if hasil["gaya"] in ("misterius", "cerah", "natural") else "misterius"
     hasil["maskot"] = bool(hasil["maskot"])
     if hasil["gaya_naskah"] not in ("sains", "meyakinkan", "twist", "seimbang", "bangun_teori", "edukasi"):
@@ -142,9 +142,11 @@ def buat_editfolder(folder, judul, tutup_broll, opsi):
                 ekstra={"edit": {"folder": folder, "judul": judul or nama, "tutup_broll": bool(tutup_broll)}})
 
 
-def buat_montase(folder, judul, format, durasi, opsi):
+def buat_montase(folder, judul, format, durasi, opsi, rekaman=None):
     """Proyek 'Montase highlight': folder klip b-roll/drone → 1 video highlight berbasis kualitas visual
-    (tanpa transkrip), lihat montase.py. Cocok untuk footage tanpa narasi (drone, aerial, timelapse)."""
+    (tanpa transkrip), lihat montase.py. Cocok untuk footage tanpa narasi (drone, aerial, timelapse).
+    Kalau `rekaman` (file audio) diberi: mode 'sesuaikan ke rekaman' — footage dipotong ngikut panjang
+    rekaman & rekaman jadi audio videonya (durasi diabaikan, dihitung dari rekaman)."""
     folder = str(folder)
     if not os.path.isdir(folder):
         raise ValueError("Folder tidak ditemukan")
@@ -152,8 +154,10 @@ def buat_montase(folder, judul, format, durasi, opsi):
     durasi = max(30, min(900, int(durasi or 240)))
     opsi = {**opsi, "mode": "montase", "format": fmt, "kembar": False}
     nama = (judul or os.path.basename(folder.rstrip("/\\")) or "Montase")[:80]
-    return buat(f"Montase: {nama}", opsi, nama=nama,
-                ekstra={"montase": {"folder": folder, "judul": judul or nama, "format": fmt, "durasi": durasi}})
+    mont = {"folder": folder, "judul": judul or nama, "format": fmt, "durasi": durasi}
+    if rekaman:
+        mont["rekaman"] = str(rekaman)
+    return buat(f"Montase: {nama}", opsi, nama=nama, ekstra={"montase": mont})
 
 
 def daftar():
@@ -1444,8 +1448,97 @@ def _gambar_ai_jika_perlu(p, a, o, batal):
         a["kandidat"] = ([g] + kand)[:22]
 
 
+def _animasi(p):
+    """Visual-mode 'animasi' (flat-explainer prosedural): tanpa footage stok, adegan digambar mesin/animasi."""
+    return p["opsi"].get("visual") == "animasi"
+
+
+def _footage_animasi(p, cfg, batal):
+    """Pengganti langkah footage utk mode animasi: sutradara LLM pilih template+aset tiap adegan (a['anim'])."""
+    judul = p["meta"].get("judul") or p["nama"]
+    teks = [a["teks"] for a in p["adegan"]]
+    log(p, f"Sutradara animasi: menata {len(teks)} adegan…")
+    p["pesan"] = "Sutradara animasi…"
+    spec = animasi.sutradara(cfg, judul, teks, batal=batal, log=lambda t: log(p, t))
+    for a, s in zip(p["adegan"], spec):
+        a["anim"] = s
+        a.setdefault("kandidat", [])
+        a.setdefault("shots", [])
+    _progres(p, "footage", 1.0)
+
+
+def _render_animasi(p, cfg, batal):
+    """Render mode animasi: 1 klip animasi per adegan → gabung dgn narasi+musik+subtitle (reuse render.gabung)."""
+    o = p["opsi"]
+    kerja = PROYEK / p["id"] / "render"
+    kerja.mkdir(parents=True, exist_ok=True)
+    n = len(p["adegan"])
+    shots = []
+    for i, a in enumerate(p["adegan"]):
+        batal.cek()
+        frames = int(round(a["durasi"] * render.FPS))
+        tujuan = kerja / f"anim-{i:03d}.mp4"
+        spec = a.get("anim") or {"tipe": "sorot", "aset": "lampu", "label": "FAKTA"}
+        try:
+            animasi.render_klip(spec, frames, o["format"], tujuan, batal=batal)
+        except Dibatalkan:
+            raise
+        except Exception as e:
+            log(p, f"  Adegan {i + 1} animasi gagal ({str(e)[:70]}); latar polos")
+            render.shot_kosong(frames, o["format"], tujuan, batal, gaya=o["gaya"])
+        shots.append(tujuan)
+        p["pesan"] = f"Render animasi adegan {i + 1}/{n}"
+        _progres(p, "render", 0.8 * (i + 1) / n)
+    penutup = p.get("penutup")
+    if penutup:
+        tj = kerja / "anim-penutup.mp4"
+        render.shot_kosong(int(round(penutup["durasi"] * render.FPS)), o["format"], tj, batal, gaya=o["gaya"])
+        shots.append(tj)
+    log(p, "Menggabungkan animasi, narasi, musik, dan subtitle…")
+    musik = render.pilih_musik() if o["musik"] else None
+    if o["musik"] and not musik:
+        try:
+            musik = efek.musik_cerah() if o["gaya"] == "cerah" else efek.musik_misteri()
+        except Exception as e:
+            log(p, f"Musik bawaan gagal: {e}")
+    adegan_render = [{"durasi": a["durasi"], "mulai": a["mulai"], "kata": a.get("kata", [])} for a in p["adegan"]]
+    akhir_utama = p["adegan"][-1]["mulai"] + p["adegan"][-1]["durasi"]
+    suara_render = [{"mp3": p["narasi_mp3"], "durasi": round(akhir_utama, 3)}]
+    if penutup:
+        adegan_render.append({**penutup, "kata": []})
+        suara_render.append({"mp3": penutup["mp3"], "durasi": penutup["durasi"]})
+    disclaimer = {"awal": o["teks_disclaimer"] if o["disclaimer"] in ("awal", "keduanya") else "",
+                  "akhir": (penutup["mulai"], penutup["durasi"], o["teks_disclaimer"]) if penutup else None}
+    judul = p["meta"].get("judul") or p["nama"]
+    folder = OUTPUT / f"{p['id'][:8]}-{slug(judul, 50)}"
+    folder.mkdir(parents=True, exist_ok=True)
+    video = folder / f"{slug(judul, 50)}.mp4"
+    render.gabung(kerja, shots, adegan_render, p["total_durasi"], o["format"], o["subtitle"], musik,
+                  o["volume_musik"], video, batal, disclaimer=disclaimer, suara=suara_render,
+                  geser_kata=0.0 if p.get("waktu_whisper") else render.GESER_KATA,
+                  hook="", sfx=None, gaya_visual=o["gaya"])
+    _progres(p, "render", 0.95)
+    dv = render.durasi_video(video)
+    log(p, f"Cek sinkron: gambar {dv:.2f} dtk vs suara {p['total_durasi']:.2f} dtk"
+           + (" ✓" if abs(dv - p["total_durasi"]) <= 0.15 else " ⚠️"))
+    thumb = folder / "thumbnail.jpg"
+    try:
+        fr = kerja / "frame-thumb.jpg"
+        ffmpeg(["-ss", f"{max(0.5, p['total_durasi'] * 0.12):.2f}", "-i", str(video), "-frames:v", "1", str(fr)], timeout=60)
+        render.thumbnail(kerja, fr, p["meta"].get("teks_thumbnail", ""), o["format"], thumb)
+    except Exception as e:
+        log(p, f"Thumbnail gagal: {e}")
+    (folder / "naskah.txt").write_text(p["naskah"], encoding="utf-8")
+    (folder / "deskripsi.txt").write_text(_deskripsi(p), encoding="utf-8")
+    p["hasil"] = {"folder": str(folder), "video": str(video), "thumbnail": str(thumb) if thumb.exists() else "",
+                  "durasi": p["total_durasi"]}
+    log(p, f"Selesai! {video.name}")
+
+
 def l_footage(p, cfg, batal):
     o = p["opsi"]
+    if _animasi(p):
+        return _footage_animasi(p, cfg, batal)
     n = len(p["adegan"])
     gagal_unduh = set()  # kandidat yang gagal tidak dicoba lagi di shot lain
     if not p.get("riset"):  # mode "bacakan": cari artikel topiknya untuk gambar topik
@@ -1729,6 +1822,8 @@ def _teks_layar(p, ada_hook):
 
 def l_render(p, cfg, batal):
     o = p["opsi"]
+    if _animasi(p):
+        return _render_animasi(p, cfg, batal)
     kerja = PROYEK / p["id"] / "render"
     kerja.mkdir(parents=True, exist_ok=True)
     shots, nomor = [], 0

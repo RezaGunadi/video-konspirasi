@@ -1185,6 +1185,24 @@ def _paksa_resep(baris, spec):
     return spec
 
 
+def _rapikan(baris, spec):
+    """Pembersihan deterministik (pengganti LLM-kritikus yang suka ngacak): label jelek dibenerin + dedup repetisi."""
+    keyset = {k.lower() for k in ASET}
+    for s in spec:
+        if s.get("tipe") == "sorot":
+            lab, aset = (s.get("label") or "").strip(), s.get("aset", "lampu")
+            if (not lab) or ("+" in lab) or (lab.lower() in keyset) or (lab.lower().replace(" ", "_") in keyset) or len(lab) > 16:
+                s["label"] = _ASET_LABEL.get(aset, aset.upper())
+    # dedup: 2 adegan beruntun tipe+aset sama → ganti aset ke-2 dari keyword narasinya
+    for i in range(1, len(spec)):
+        a, b = spec[i - 1], spec[i]
+        if a.get("tipe") == b.get("tipe") == "sorot" and a.get("aset") == b.get("aset"):
+            alt = _keyword_spec(baris[i]).get("aset")
+            if alt and alt != b.get("aset"):
+                b["aset"], b["label"] = alt, _ASET_LABEL.get(alt, alt.upper())
+    return spec
+
+
 def sutradara(cfg, judul, baris, batal=None, log=print):
     """baris = daftar kalimat narasi. Kembalikan 1 spec adegan per kalimat (template+aset+label).
     Pakai gemma (structured JSON); fallback aturan keyword per baris. Baris pertama selalu 'judul'."""
@@ -1256,9 +1274,8 @@ def sutradara(cfg, judul, baris, batal=None, log=print):
     spec[0] = {"tipe": "judul", "judul": _judul_pendek(judul or baris[0]), "bg": bg_utama}
     for k, s in enumerate(spec):     # ragam gerak masuk dirotasi biar adegan berurutan nggak monoton
         s.setdefault("var", k)
-    if llm_ok:                        # pass KRITIKUS (multi-agent): review + benerin repetisi/resep/label
-        spec = kritik(cfg, judul, baris, spec, batal=batal, log=log)
     spec = _paksa_resep(baris, spec)  # jamin resep proses kepakai kalau narasi jelas cocok
+    spec = _rapikan(baris, spec)      # bersihin label jelek + dedup repetisi (deterministik, anti-ngacak)
     return spec
 
 

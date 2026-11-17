@@ -385,29 +385,45 @@ def atom(frame, cx, cy, sc, t):
         _ell(d, rx, ry, 18 * sc, ATOM_E + (255,))
 
 
-def maskot(frame, cx, cy, sc, wave=0.0):
-    """Maskot flat (bulat cyan) + lengan kanan dadah (wave = sudut ayun)."""
+def maskot(frame, cx, cy, sc, wave=0.0, talk=0.0, point=None, glasses=False):
+    """Maskot flat cyan. wave=dadah; talk=mulut buka (0..1, ngomong); point=(tx,ty) lengan kanan NUNJUK;
+    glasses=pakai kacamata (mode presenter)."""
     d = ImageDraw.Draw(frame)
     rb = 110 * sc
-    # lengan kiri (diam) & kanan (dadah) di belakang badan
-    for sisi, ay in ((-1, 0.0), (1, wave)):
-        sh = (cx + sisi * rb * 0.75, cy - rb * 0.1)
-        ang = (-1.2 if sisi < 0 else -0.5 - 0.9 * (0.5 + 0.5 * math.sin(ay)))
-        hx = sh[0] + sisi * math.cos(ang) * rb * 0.95
-        hy = sh[1] - abs(math.sin(ang)) * rb * 0.95 if sisi > 0 else sh[1] + rb * 0.7
-        d.line([P(*sh), P(hx, hy)], fill=MASKOT + (255,), width=int(26 * sc))
-        _ell(d, hx, hy, 17 * sc, MASKOT + (255,))
+    # lengan kiri (diam, turun)
+    shl = (cx - rb * 0.75, cy - rb * 0.1)
+    d.line([P(*shl), P(shl[0] - rb * 0.45, shl[1] + rb * 0.7)], fill=MASKOT + (255,), width=int(26 * sc))
+    _ell(d, shl[0] - rb * 0.45, shl[1] + rb * 0.7, 17 * sc, MASKOT + (255,))
+    # lengan kanan: nunjuk / dadah
+    shr = (cx + rb * 0.75, cy - rb * 0.1)
+    if point is not None:
+        ang = math.atan2(point[1] - shr[1], point[0] - shr[0])
+        hx, hy = shr[0] + math.cos(ang) * rb * 1.15, shr[1] + math.sin(ang) * rb * 1.15
+    else:
+        a = -0.5 - 0.9 * (0.5 + 0.5 * math.sin(wave))
+        hx, hy = shr[0] + math.cos(a) * rb * 0.95, shr[1] - abs(math.sin(a)) * rb * 0.95
+    d.line([P(*shr), P(hx, hy)], fill=MASKOT + (255,), width=int(26 * sc))
+    _ell(d, hx, hy, 17 * sc, MASKOT + (255,))
+    # badan + topi
     _ell(d, cx, cy, rb, MASKOT + (255,))
     _ell(d, cx, cy + rb * 0.2, rb * 0.62, MASKOT_BELLY + (255,))
-    # topi penjelajah kecil
     d.rounded_rectangle([P(cx - rb * 0.8, cy - rb * 1.02), P(cx + rb * 0.8, cy - rb * 0.86)], radius=8 * sc, fill=MASKOT_DARK)
     d.rounded_rectangle([P(cx - rb * 0.5, cy - rb * 1.35), P(cx + rb * 0.5, cy - rb * 0.9)], radius=14 * sc, fill=MASKOT_DARK)
     # mata
     for sx in (-0.34, 0.34):
         _ell(d, cx + sx * rb, cy - rb * 0.14, rb * 0.2, (255, 255, 255, 255))
         _ell(d, cx + sx * rb + rb * 0.05, cy - rb * 0.12, rb * 0.09, (20, 30, 45, 255))
-    # senyum
-    d.arc([P(cx - rb * 0.32, cy + rb * 0.02), P(cx + rb * 0.32, cy + rb * 0.4)], 15, 165, fill=(20, 60, 70, 255), width=int(7 * sc))
+    if glasses:
+        for sx in (-0.34, 0.34):
+            d.ellipse([P(cx + sx * rb - rb * 0.27, cy - rb * 0.14 - rb * 0.24), P(cx + sx * rb + rb * 0.27, cy - rb * 0.14 + rb * 0.24)],
+                      outline=(28, 38, 54, 255), width=int(7 * sc))
+        d.line([P(cx - rb * 0.07, cy - rb * 0.14), P(cx + rb * 0.07, cy - rb * 0.14)], fill=(28, 38, 54, 255), width=int(6 * sc))
+    # mulut: ngomong (oval buka-tutup) atau senyum
+    if talk > 0.05:
+        mh = rb * (0.06 + 0.16 * talk)
+        d.ellipse([P(cx - rb * 0.17, cy + rb * 0.2 - mh), P(cx + rb * 0.17, cy + rb * 0.2 + mh)], fill=(26, 56, 66, 255))
+    else:
+        d.arc([P(cx - rb * 0.32, cy + rb * 0.02), P(cx + rb * 0.32, cy + rb * 0.4)], 15, 165, fill=(20, 60, 70, 255), width=int(7 * sc))
 
 
 def kartu_label(frame, s, cx, cy, px=58, warna=ACCENT_Y):
@@ -793,7 +809,90 @@ class Maskot(Adegan):
             gelembung(f, self.p["teks"], self.W / 2, self.H * 0.3)
 
 
-TEMPLATE = {"judul": Judul, "roket": Roket, "orbit": Orbit, "sorot": Sorot, "banding": Banding, "maskot": Maskot}
+def _lerp3(a, b, t):
+    t = max(0.0, min(1.0, t))
+    return tuple(int(a[k] + (b[k] - a[k]) * t) for k in range(3))
+
+
+def _gambar_di_kotak(f, draw_fn, box, radius=14):
+    """Gambar draw_fn(layer) lalu clip ke kotak (box=[x0,y0,x1,y1] koordinat final)."""
+    layer = _layer(f.size)
+    draw_fn(layer)
+    mask = Image.new("L", f.size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle([P(box[0], box[1]), P(box[2], box[3])], radius=int(radius * SS), fill=255)
+    layer.putalpha(ImageChops.multiply(layer.split()[3], mask))
+    f.alpha_composite(layer)
+
+
+def _termo_frac(f, cx, cy, frac, sc=0.8):
+    """Termometer level=frac (0..1); warna isi biru(dingin)->merah(panas) ikut frac."""
+    d = ImageDraw.Draw(f)
+    tubw, tubh, br = 40 * sc, 240 * sc, 48 * sc
+    top, bot = cy - tubh * 0.5, cy + tubh * 0.5
+    d.rounded_rectangle([P(cx - tubw / 2, top), P(cx + tubw / 2, bot + br * 0.3)], radius=int(tubw / 2 * SS), fill=(245, 247, 250, 255))
+    _ell(d, cx, bot + br * 0.3, br, (245, 247, 250, 255))
+    col = _lerp3((90, 150, 210), (239, 83, 80), frac)
+    lvl = bot - tubh * 0.84 * max(0.08, min(1, frac))
+    d.rounded_rectangle([P(cx - tubw * 0.28, lvl), P(cx + tubw * 0.28, bot + br * 0.3)], radius=int(tubw * 0.28 * SS), fill=col + (255,))
+    _ell(d, cx, bot + br * 0.3, br * 0.72, col)
+
+
+class Presenter(Adegan):
+    """Resep PRESENTER: maskot guru (kacamata) nunjuk LAYAR proyektor berisi gambar tema, mulut ngomong."""
+    def bangun_statis(self):
+        f = _grad(self.fmt, (74, 100, 136), (44, 62, 92))
+        ImageDraw.Draw(f).rectangle([P(0, self.H * 0.72), P(self.W, self.H)], fill=(126, 100, 76, 255))
+        return f
+
+    def gambar(self, f, i):
+        t, W, H = i / FPS, self.W, self.H
+        e = ease_out(min(1, i / (0.45 * FPS)))
+        box = [W * 0.14, H * 0.09 - (1 - e) * H * 0.1, W * 0.86, H * 0.44 - (1 - e) * H * 0.1]
+        ImageDraw.Draw(f).rounded_rectangle([P(box[0] - 16, box[1] - 16), P(box[2] + 16, box[3] + 16)],
+                                            radius=int(22 * SS), fill=(24, 30, 44, 255))
+        tc = _TEMA.get(self.p.get("bg", "gurun"), _TEMA["sains"])
+
+        def isi(layer):
+            ld = ImageDraw.Draw(layer)
+            ld.rectangle([P(box[0], box[1]), P(box[2], box[3])], fill=tc["top"] + (255,))
+            ld.rectangle([P(box[0], (box[1] + box[3]) * 0.52), P(box[2], box[3])], fill=tc["bot"] + (255,))
+            aset = self.p.get("aset")
+            if aset in ASET:
+                ASET[aset](layer, (box[0] + box[2]) / 2, (box[1] + box[3]) * 0.52, 0.6, t)
+        _gambar_di_kotak(f, isi, box, radius=12)
+        mcx, mcy = W * 0.3, H * 0.82 + (1 - e) * H * 0.2
+        maskot(f, mcx, mcy, 1.0, point=((box[0] + box[2]) / 2, box[3]), glasses=True, talk=0.5 + 0.5 * math.sin(t * 10))
+        if self.p.get("label"):
+            kartu_label(f, self.p["label"], W * 0.72, H * 0.84)
+
+
+class SiangMalam(Adegan):
+    """Resep SIANG->MALAM->BEKU: matahari turun, bulan naik, langit gelap, suhu turun merah->biru, tanah membeku."""
+    def bangun_statis(self):
+        return latar(self.fmt, "angkasa")   # tak dipakai; frame() override penuh
+
+    def frame(self, i):
+        p, W, H = i / max(1, self.n - 1), self.W, self.H
+        f = _grad(self.fmt, _lerp3((120, 170, 225), (18, 22, 50), p), _lerp3((250, 200, 140), (10, 14, 32), p))
+        d = ImageDraw.Draw(f)
+        if p > 0.45:
+            for x, y, r, ph, sp in _stars(self.fmt):
+                if y < H * 0.6:
+                    _ell(d, x, y, r, (240, 240, 255, int(200 * min(1, (p - 0.45) * 2.2))))
+        _matahari_kecil(f, W * 0.28, H * (0.2 + 0.82 * p), 72)
+        bulan(f, W * 0.72, H * (1.15 - 0.95 * p), 70)
+        ground = H * 0.78
+        d.rectangle([P(0, ground), P(W, H)], fill=_lerp3((206, 120, 70), (96, 150, 212), p) + (255,))
+        if p > 0.7:
+            for k in range(7):
+                _ell(d, W * (0.08 + 0.13 * k), ground + 28, 11 * min(1, (p - 0.7) * 3.3), (232, 246, 255, 220))
+        _termo_frac(f, W * 0.87, H * 0.42, 1 - p)
+        kartu_label(f, self.p.get("label") or ("MEMBEKU" if p > 0.6 else "MATAHARI TERBENAM"), W * 0.42, H * 0.9, px=44)
+        return f
+
+
+TEMPLATE = {"judul": Judul, "roket": Roket, "orbit": Orbit, "sorot": Sorot, "banding": Banding,
+            "maskot": Maskot, "presenter": Presenter, "siang_malam": SiangMalam}
 
 
 # ======================================================================= render
@@ -806,6 +905,8 @@ _ASET_LABEL = {"termometer": "SUHU", "panas": "PANAS", "es": "DINGIN", "gelomban
 
 # aturan keyword (fallback kalau LLM mati / tak kebaca). Urut: cocok pertama menang.
 _KW = [
+    (r"matahari terbenam|senja|panas.{0,20}siang.{0,30}dingin.{0,20}malam|dingin.{0,20}malam.{0,30}panas.{0,20}siang|"
+     r"suhu.{0,20}(turun|anjlok).{0,20}malam|membeku.{0,20}malam|malam.{0,20}membeku", {"tipe": "siang_malam", "label": "MALAM"}),
     (r"roket|meluncur|luncur|dorong|propuls|wahana antariksa", {"tipe": "roket", "label": "DORONGAN"}),
     (r"orbit|mengelilingi|mengitari|revolusi|ngitar", {"tipe": "orbit", "pusat": "bumi", "keliling": "bulan", "label": "ORBIT"}),
     (r"\bbulan\b", {"tipe": "sorot", "aset": "bulan"}),
@@ -917,6 +1018,11 @@ def _bersihkan_spec(a, teks, bg_default="sains"):
         return {"tipe": "orbit", "pusat": "bumi", "keliling": "bulan", "label": lab or "ORBIT", "bg": "angkasa"}
     if tipe == "maskot":
         return {"tipe": "maskot", "teks": (a.get("label") or "Hmm…")[:24], "bg": bg}
+    if tipe == "presenter":
+        aset = a.get("aset") if a.get("aset") in ASET else (_keyword_spec(teks).get("aset") or "lampu")
+        return {"tipe": "presenter", "aset": aset, "label": lab, "bg": bg}
+    if tipe == "siang_malam":
+        return {"tipe": "siang_malam", "label": lab or "MALAM", "bg": bg}
     return {"tipe": "judul", "judul": _judul_pendek(lab or teks), "bg": bg}
 
 
@@ -940,8 +1046,12 @@ def sutradara(cfg, judul, baris, batal=None, log=print):
                "Untuk TIAP kalimat narasi, pilih SATU adegan visual yang paling mewakili maknanya.\n"
                "Template: 'judul'=kalimat pembuka; 'roket'=peluncuran/ke luar angkasa; 'orbit'=mengelilingi/revolusi; "
                "'banding'=membandingkan DUA hal; 'maskot'=sapaan/ajakan (CUKUP di pembuka/penutup); "
-               "'sorot'=tampilkan SATU benda (DEFAULT); 'foto'=FOTO/VIDEO ASLI dari web buat TEMPAT atau BENDA NYATA "
-               "spesifik yang lebih bagus kalau nyata (mis. gurun Atacama, aurora, unta, Venus).\n"
+               "'sorot'=tampilkan SATU benda (DEFAULT); 'foto'=FOTO/VIDEO ASLI dari web buat TEMPAT/BENDA NYATA "
+               "spesifik (mis. gurun Atacama, aurora, unta).\n"
+               "RESEP KHUSUS (lebih bagus dari 'sorot', pakai kalau COCOK): 'presenter'=karakter GURU (kacamata) "
+               "jelasin di depan PROYEKTOR (buat kalimat PENJELASAN/pembuka — isi 'aset' buat gambar di layar); "
+               "'siang_malam'=sekuens matahari TERBENAM → bulan naik → suhu TURUN → tanah MEMBEKU (khusus kalimat soal "
+               "panas di siang & dingin/beku di malam).\n"
                "Untuk 'sorot' pilih 'aset'; 'banding' WAJIB 'kiri'+'kanan' DUA aset BEDA; 'foto' WAJIB isi 'query' "
                "Inggris spesifik (mis. 'atacama desert landscape'). Aset dari daftar ini saja: " + ", ".join(keys) + ".\n"
                "VARIASI: jangan ngulang 'banding'/'maskot' berturut-turut; mayoritas 'sorot' dengan aset BEDA-BEDA; "

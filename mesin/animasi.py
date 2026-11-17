@@ -1299,6 +1299,14 @@ def _rapikan(baris, spec):
             alt = _keyword_spec(baris[i]).get("aset")
             if alt and alt != b.get("aset"):
                 b["aset"], b["label"] = alt, _ASET_LABEL.get(alt, alt.upper())
+    # cap variasi GLOBAL: aset 'sorot' yang sama muncul >2x (non-berurutan) → promote elemen (visual beda tapi relevan)
+    seen = {}
+    for i in range(1, n):
+        s = spec[i]
+        if s.get("tipe") == "sorot":
+            seen[s.get("aset")] = seen.get(s.get("aset"), 0) + 1
+            if seen[s.get("aset")] > 2:
+                spec[i] = _variasi_spec(s)
     return spec
 
 

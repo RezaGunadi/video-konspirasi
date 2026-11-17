@@ -95,6 +95,10 @@ _HIAS_WARNA = {"gurun": (235, 205, 150), "laut": (180, 222, 245), "langit": (255
 # aset "tanda tangan" per tema buat visual besar di opening (hook)
 _BG_ASET = {"gurun": "matahari", "laut": "tetes_air", "langit": "awan", "hijau": "pohon",
             "angkasa": "bumi", "malam": "bulan", "tubuh": "sel", "sains": "atom"}
+# aset pendukung yang 'burst' masuk di opening biar rame & animatif
+_OPENING_PENDUKUNG = {"gurun": ("panas", "termometer"), "laut": ("awan", "tetes_air"), "langit": ("awan", "bintang"),
+                      "hijau": ("pohon", "matahari"), "angkasa": ("bulan", "bintang"), "malam": ("bintang", "bulan"),
+                      "tubuh": ("dna", "atom"), "sains": ("atom", "lampu")}
 
 
 def _hias(f, i, bg, W, H, seed=0):
@@ -681,23 +685,33 @@ class Judul(Adegan):
         _furnitur(f, i, self.bg, self.W, self.H, self.p.get("var", 0))
         _hias(f, i, self.bg, self.W, self.H, seed=5)
         t = i / FPS
-        # HOOK: visual besar "tanda tangan" topik (pop-in gede) biar retensi awal kuat
+        # HOOK PALING ANIMATIF: pendukung BURST dari sisi + signature besar nge-PULSE + judul SLAM + maskot
+        for k, e in enumerate(_OPENING_PENDUKUNG.get(self.bg, ())):
+            if e not in ASET:
+                continue
+            ep = ease_out(min(1, max(0, (i - (0.12 + k * 0.12) * FPS) / (0.32 * FPS))))
+            if ep <= 0:
+                continue
+            side = -1 if k % 2 == 0 else 1
+            bx = self.W * (0.5 + side * (0.34 + 0.5 * (1 - ep)))
+            ASET[e](f, bx, self.H * 0.56 + 14 * math.sin(t * 2 + k), ep * 0.5 * (1 + 0.06 * math.sin(t * 2.2 + k)), t)
         aset = self.p.get("aset") if self.p.get("aset") in ASET else _BG_ASET.get(self.bg)
-        vp = ease_out(min(1, i / (0.4 * FPS)))
+        vp = ease_out(min(1, i / (0.35 * FPS)))
         if aset in ASET and vp > 0:
-            ASET[aset](f, self.W / 2, self.H * 0.52, (0.2 + 1.25 * vp) * (1 + 0.05 * math.sin(t * 1.8)), t)
-        sc = overshoot(min(1, (i + 1) / (0.42 * FPS)))
+            ASET[aset](f, self.W / 2, self.H * 0.52, (0.3 + 1.25 * vp) * (1 + 0.08 * math.sin(t * 2.4)), t)
+        sc = overshoot(min(1, (i + 1) / (0.28 * FPS)), k=2.3)          # SLAM (punch cepat)
+        shake = 7 * math.sin(t * 34) * max(0, 1 - i / (0.3 * FPS))     # getar kecil di awal
         s = _judul_pendek(self.p.get("judul", "SAINS"))
-        px = _fit_px(f, s, self.W * 0.9, 88)
-        teks(f, s, self.W / 2, self.H * 0.2, px * sc)
-        wlen = ease_out(min(1, max(0, (i - 0.25 * FPS) / (0.4 * FPS))))
+        px = _fit_px(f, s, self.W * 0.9, 92)
+        teks(f, s, self.W / 2 + shake, self.H * 0.19, px * sc)
+        wlen = ease_out(min(1, max(0, (i - 0.22 * FPS) / (0.35 * FPS))))
         if wlen > 0:
-            w = self.W * 0.32 * wlen
+            w = self.W * 0.34 * wlen
             ImageDraw.Draw(f).rounded_rectangle(
-                [P(self.W / 2 - w, self.H * 0.285), P(self.W / 2 + w, self.H * 0.296)], radius=6 * SS, fill=ACCENT_Y + (255,))
-        naik = ease_out(min(1, max(0, (i - 0.3 * FPS) / (0.4 * FPS))))   # maskot host muncul
+                [P(self.W / 2 - w, self.H * 0.28), P(self.W / 2 + w, self.H * 0.292)], radius=6 * SS, fill=ACCENT_Y + (255,))
+        naik = ease_out(min(1, max(0, (i - 0.28 * FPS) / (0.38 * FPS))))   # maskot host muncul
         if naik > 0:
-            maskot(f, self.W / 2, self.H * 0.82 + (0.3 * self.H) * (1 - naik) + 9 * math.sin(t * 2), 0.9, wave=i * 0.5)
+            maskot(f, self.W / 2, self.H * 0.82 + (0.3 * self.H) * (1 - naik) + 9 * math.sin(t * 2), 0.88, wave=i * 0.5)
 
 
 class Roket(Adegan):
@@ -953,26 +967,27 @@ class Hujan(Adegan):
 
 
 class BayanganHujan(Adegan):
-    """Resep BAYANGAN HUJAN: 2 gunung apit gurun; awan keblok gunung kiri → hujan di sisi kiri, GURUN kering di tengah."""
+    """Resep BAYANGAN HUJAN: gunung RAKSASA kaya TEMBOK; awan JALAN dari kiri → KEBLOK tembok → hujan di sisi kiri,
+    gurun KERING + terik di sisi kanan. (Nganimasiin mekanisme 'tembok menghalangi awan', bukan gunung-vs-awan)."""
     def bangun_statis(self):
         W, H = self.W, self.H
-        f = _grad(self.fmt, (120, 170, 225), (236, 198, 140))
+        f = _grad(self.fmt, (118, 168, 224), (232, 196, 140))
         d = ImageDraw.Draw(f)
-        base = H * 0.72
-        d.rectangle([P(0, base), P(W, H)], fill=(220, 176, 116, 255))
-        _ell(d, W * 0.5, base + H * 0.14, W * 0.34, (202, 156, 100, 255))
-        _gunung_satu(f, W * 0.2, base, W * 0.28, H * 0.44, (104, 90, 116))
-        _gunung_satu(f, W * 0.82, base, W * 0.24, H * 0.36, (118, 104, 130))
+        base = H * 0.74
+        d.rectangle([P(0, base), P(W, H)], fill=(222, 178, 118, 255))
+        _gunung_satu(f, W * 0.4, base, W * 0.33, H * 0.62, (98, 84, 110))   # TEMBOK raksasa (tinggi & lebar)
+        _matahari_kecil(f, W * 0.85, H * 0.14, 52)                          # terik di sisi kering (kanan)
+        _kaktus(f, W * 0.88, H * 0.88, 0.85)
         return f
 
     def gambar(self, f, i):
         t, W, H = i / FPS, self.W, self.H
-        e = ease_out(min(1, i / (0.55 * FPS)))
-        cxc = W * (-0.05 + 0.28 * e)                      # awan masuk dari kiri ke gunung
-        _awan_bentuk(f, cxc, H * 0.2, W * 0.15, (210, 216, 224))
-        _hujan(f, i, W * 0.08, W * 0.3, H * 0.26, H * 0.66)   # hujan di sisi gunung (windward)
-        _matahari_kecil(f, W * 0.55, H * 0.15, 54)           # gurun kering terik di tengah
-        _kaktus(f, W * 0.52, H * 0.84, 0.9)
+        base, wall = H * 0.74, W * 0.28
+        for k in range(3):                      # awan JALAN dari kiri, NUMPUK & KEBLOK di tembok
+            prog = ((i + k * 26) % 108) / 108.0
+            x = min(-0.15 * W + prog * (wall + 0.2 * W), wall - k * 0.045 * W)
+            _awan_bentuk(f, x, H * (0.15 + k * 0.085), W * 0.12, (212, 218, 226))
+        _hujan(f, i, W * 0.05, wall + W * 0.02, H * 0.26, base)             # hujan tumpah di sisi windward (kiri)
         kartu_label(f, self.p.get("label") or "BAYANGAN HUJAN", W * 0.5, H * 0.93, px=40)
 
 
@@ -1180,8 +1195,9 @@ def kritik(cfg, judul, baris, spec, batal=None, log=print):
 _PAKSA = [   # resep DIPAKSA kalau narasi jelas cocok (LLM sering milih banding/sorot yang 'aman')
     (r"matahari terbenam|panas.{0,20}siang.{0,30}(dingin|beku|anjlok).{0,20}malam|membeku.{0,20}malam|"
      r"malam.{0,20}membeku|suhu.{0,15}(anjlok|turun drastis)", "siang_malam"),
-    (r"gunung.{0,25}(halang|blok|hadang|tahan).{0,18}awan|diapit.{0,15}gunung|bayangan hujan|"
-     r"awan.{0,18}(terhalang|keblok|tertahan).{0,15}gunung|hujan.{0,15}sisi.{0,15}gunung|pegunungan.{0,20}menghalangi", "bayangan_hujan"),
+    (r"gunung.{0,25}(halang|blok|hadang|tahan).{0,18}awan|diapit.{0,15}gunung|bayangan hujan|tembok.{0,22}(awan|hujan|raksasa|alam)|"
+     r"dinding.{0,20}(awan|hujan|alam|raksasa)|(memblokir|menghalangi|menahan|menghadang).{0,15}awan|penghalang.{0,15}(awan|hujan)|"
+     r"awan.{0,18}(terhalang|keblok|tertahan)|hujan.{0,15}sisi.{0,15}gunung|pegunungan.{0,20}menghalangi", "bayangan_hujan"),
     (r"turun hujan|hujan turun|hujan deras|hujan lebat", "hujan"),
 ]
 _PAKSA_LABEL = {"siang_malam": "MALAM", "bayangan_hujan": "BAYANGAN HUJAN", "hujan": "HUJAN"}

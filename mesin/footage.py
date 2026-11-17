@@ -1319,6 +1319,13 @@ def batasi_skor(skor, isi, k, narasi="", lihat="", subjek="", alias=""):
         skor = min(skor, 4)
     if _AMATIR.search(f"{isi} {k.get('judul') or ''}") and not _AMATIR.search(adegan):
         skor = min(skor, 3)
+    # Foto/klip yang SUBJEKNYA orang (isi juri diawali "pria/turis/atlet…", atau judul stok menyebut orang) padahal
+    # adegan tidak membahas manusia: foto turis jadi stiker "udara gurun", foto kerumunan jadi stiker "rotasi Bumi".
+    # Dulu cuma klip video (orang_tak_relevan); stiker FOTO orang lolos ke skor tinggi. Maks 3.
+    isi_awal = " ".join((isi or "").split()[:3])
+    if (_ORANG_ISI.search(isi_awal) or _ORANG_JUDUL.search(f"{k.get('judul') or ''} {k.get('teks') or ''}")) \
+            and not _NARASI_ORANG.search(adegan):
+        skor = min(skor, 3)
     inti = [w for w in re.findall(r"\w+", (subjek or "").lower()) if len(w) >= 3 and w not in _BUKAN_INTI]
     if inti and alias:
         inti += [w for w in re.findall(r"\w+", alias.lower()) if len(w) >= 3 and w not in _BUKAN_INTI]

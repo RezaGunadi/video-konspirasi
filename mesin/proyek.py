@@ -1504,25 +1504,32 @@ def _render_animasi(p, cfg, batal):
     for i, a in enumerate(p["adegan"]):
         batal.cek()
         frames = int(round(a["durasi"] * render.FPS))
-        tujuan = kerja / f"anim-{i:03d}.mp4"
         spec = a.get("anim") or {"tipe": "sorot", "aset": "lampu", "label": "FAKTA"}
-        try:
-            if spec.get("tipe") == "foto" and spec.get("kand"):
-                bahan = footage.siapkan(spec["kand"], frames / render.FPS, batal)
-                if not bahan:
-                    raise RuntimeError("siapkan footage gagal")
-                render.buat_shot(bahan, frames, o["format"], o["gaya"], o.get("isi_layar", True), i, tujuan, batal, gerak="masuk")
-            else:
-                animasi.render_klip(spec, frames, o["format"], tujuan, batal=batal)
-        except Dibatalkan:
-            raise
-        except Exception as e:
-            log(p, f"  Adegan {i + 1} ({spec.get('tipe')}) gagal ({str(e)[:70]}); fallback animasi")
+        # adegan 'sorot' PANJANG dipecah 2 shot (visual ganti di tengah) biar nggak statis 'itu lagi itu lagi'
+        if spec.get("tipe") == "sorot" and a["durasi"] > 5.5:
+            f1 = frames // 2
+            subs = [(spec, f1), (animasi._variasi_spec(spec), frames - f1)]
+        else:
+            subs = [(spec, frames)]
+        for j, (sp, fr) in enumerate(subs):
+            tujuan = kerja / f"anim-{i:03d}-{j}.mp4"
             try:
-                animasi.render_klip(animasi._keyword_spec(a["teks"]), frames, o["format"], tujuan, batal=batal)
-            except Exception:
-                render.shot_kosong(frames, o["format"], tujuan, batal, gaya=o["gaya"])
-        shots.append(tujuan)
+                if sp.get("tipe") == "foto" and sp.get("kand"):
+                    bahan = footage.siapkan(sp["kand"], fr / render.FPS, batal)
+                    if not bahan:
+                        raise RuntimeError("siapkan footage gagal")
+                    render.buat_shot(bahan, fr, o["format"], o["gaya"], o.get("isi_layar", True), i, tujuan, batal, gerak="masuk")
+                else:
+                    animasi.render_klip(sp, fr, o["format"], tujuan, batal=batal)
+            except Dibatalkan:
+                raise
+            except Exception as e:
+                log(p, f"  Adegan {i + 1}.{j} ({sp.get('tipe')}) gagal ({str(e)[:60]}); fallback")
+                try:
+                    animasi.render_klip(animasi._keyword_spec(a["teks"]), fr, o["format"], tujuan, batal=batal)
+                except Exception:
+                    render.shot_kosong(fr, o["format"], tujuan, batal, gaya=o["gaya"])
+            shots.append(tujuan)
         p["pesan"] = f"Render animasi adegan {i + 1}/{n}"
         _progres(p, "render", 0.8 * (i + 1) / n)
     penutup = p.get("penutup")

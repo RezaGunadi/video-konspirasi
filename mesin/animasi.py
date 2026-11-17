@@ -203,7 +203,7 @@ def teks(frame, s, cx, cy, px, fill=TEXT, anchor="mm", stroke=(10, 14, 30)):
 _TEMA = {
     "angkasa": {"top": (26, 32, 70), "bot": (9, 12, 32), "bintang": True, "fg": None},
     "malam":   {"top": (22, 28, 58), "bot": (8, 10, 26), "bintang": True, "fg": "bulan_pojok"},
-    "gurun":   {"top": (216, 138, 72), "bot": (120, 78, 52), "bintang": False, "fg": "dunes"},
+    "gurun":   {"top": (176, 206, 226), "bot": (236, 198, 140), "bintang": False, "fg": "dunes"},
     "langit":  {"top": (86, 148, 212), "bot": (150, 196, 234), "bintang": False, "fg": "awan"},
     "laut":    {"top": (60, 132, 186), "bot": (18, 68, 118), "bintang": False, "fg": "ombak"},
     "hijau":   {"top": (92, 156, 96), "bot": (48, 108, 62), "bintang": False, "fg": "bukit"},
@@ -226,8 +226,10 @@ def _grad(fmt, top, bot):
 def _fg_dunes(f, fmt):
     W, H = UK[fmt]
     d = ImageDraw.Draw(f)
-    for yy, c in ((0.80, (150, 100, 62)), (0.88, (176, 122, 74)), (0.96, (205, 150, 92))):
-        d.ellipse([P(-W * 0.3, H * yy), P(W * 1.35, H * (yy + 0.55))], fill=c + (255,))
+    # bukit pasir berlapis (makin depan makin terang) + undulasi dari 2 ellipse offset
+    for yy, c in ((0.62, (210, 168, 108)), (0.72, (224, 184, 122)), (0.82, (234, 198, 138)), (0.92, (244, 214, 158))):
+        d.ellipse([P(-W * 0.4, H * yy), P(W * 0.72, H * (yy + 0.7))], fill=c + (255,))
+        d.ellipse([P(W * 0.28, H * (yy + 0.03)), P(W * 1.42, H * (yy + 0.73))], fill=c + (255,))
 
 
 def _fg_awan(f, fmt):
@@ -1039,13 +1041,13 @@ _KW = [
 
 
 _KW_BG = [
-    (r"gurun|pasir|sahara|atacama|tandus", "gurun"),
-    (r"laut|samudra|lautan|ombak|pantai|bawah air|ikan|terumbu|pesisir", "laut"),
-    (r"hutan|pohon|daun|tumbuhan|savana|rumput|tanaman", "hijau"),
-    (r"langit|awan|hujan|atmosfer|terbang|burung|badai", "langit"),
-    (r"malam|gelap|nokturnal|tidur|senja", "malam"),
+    (r"gurun|pasir|sahara|atacama|tandus|kering kerontang", "gurun"),
+    (r"laut|samudra|lautan|ombak|pantai|bawah air|ikan|terumbu|pesisir|\bair\b|sungai|danau|cairan", "laut"),
+    (r"hutan|pohon|daun|tumbuhan|savana|rumput|tanaman|rimba|tropis", "hijau"),
+    (r"gunung|pegunungan|puncak|lereng|tebing|ketinggian|langit|awan|hujan|atmosfer|terbang|burung|badai", "langit"),
+    (r"malam|gelap|nokturnal|tidur|senja|dini hari", "malam"),
     (r"planet|antariksa|ruang angkasa|orbit|galaksi|roket|\bbulan\b|matahari|venus|mars|bintang|komet|meteor", "angkasa"),
-    (r"\bsel\b|tubuh|organ|darah|jantung|otak|\bdna\b|penuaan|bakteri|virus|saraf|paru", "tubuh"),
+    (r"\bsel\b|tubuh|organ|darah|jantung|otak|\bdna\b|penuaan|bakteri|virus|saraf|paru|mikroba|mikroorganisme", "tubuh"),
 ]
 
 
@@ -1215,47 +1217,88 @@ def _paksa_resep(baris, spec):
     return spec
 
 
+_KATA_BANDING = re.compile(r"\bvs\b|versus|dibanding|membandingkan|perbandingan|berbeda|sebaliknya|tidak seperti|"
+                           r"lebih .{0,30}(dari|daripada)|\bbeda\b|kontras|sedangkan|sementara", re.I)
+
+
+def _keyword_bg_spesifik(teks):
+    t = (teks or "").lower()
+    for pat, bg in _KW_BG:
+        if re.search(pat, t):
+            return bg
+    return None
+
+
+def _jadi_sorot(s, i, teks):
+    """Ubah banding → sorot komposisi (kiri=utama, kanan=elemen)."""
+    ki = s.get("kiri") if s.get("kiri") in ASET else (_keyword_spec(teks).get("aset") or "lampu")
+    ka = s.get("kanan") if s.get("kanan") in ASET else None
+    return {"tipe": "sorot", "aset": ki, "elemen": ([ka] if ka and ka != ki else []),
+            "label": _ASET_LABEL.get(ki, ki.upper()), "bg": s.get("bg", "sains"), "var": s.get("var", i)}
+
+
+def _variasi_spec(spec):
+    """Varian visual buat shot KE-2 adegan panjang (biar nggak statis 'itu lagi itu lagi'): tukar aset utama<->elemen + ganti entrance."""
+    if spec.get("tipe") != "sorot":
+        return spec
+    el = list(spec.get("elemen") or [])
+    s = dict(spec)
+    s["var"] = (spec.get("var", 0) + 2) % 5
+    if el:
+        s["aset"] = el[0]
+        s["elemen"] = [spec.get("aset", "lampu")] + el[1:]
+        s["label"] = _ASET_LABEL.get(el[0], el[0].upper())
+    return s
+
+
 def _rapikan(baris, spec):
-    """Pembersihan deterministik (pengganti LLM-kritikus yang ngacak): label bersih + maskot cuma penutup + dedup."""
+    """Pembersihan deterministik: bg per-bait + banding cuma kalau membandingkan + maskot penutup + label + dedup."""
     keyset = {k.lower() for k in ASET}
     n = len(spec)
-    # 1) label 'sorot' bersih (bukan gabungan nama aset / '+' / kepanjangan)
-    for s in spec:
-        if s.get("tipe") == "sorot":
-            lab, aset = (s.get("label") or "").strip(), s.get("aset", "lampu")
-            if (not lab) or ("+" in lab) or (lab.lower() in keyset) or (lab.lower().replace(" ", "_") in keyset) or len(lab) > 16:
-                s["label"] = _ASET_LABEL.get(aset, aset.upper())
-    # 2) maskot cuma di adegan TERAKHIR (penutup); maskot di tengah → jadi sorot
-    for i in range(1, n - 1):
-        if spec[i].get("tipe") == "maskot":
-            s = _keyword_spec(baris[i])
-            s["bg"], s["var"] = spec[i].get("bg", "sains"), spec[i].get("var", i)
-            spec[i] = s
-    if n and spec[-1].get("tipe") == "maskot":    # CTA penutup yang bener (bukan "MASKOT")
-        tk = (spec[-1].get("teks") or "").strip()
-        if (not tk) or tk.lower() in keyset or tk.lower() in ("maskot", "") or len(tk) > 22:
-            spec[-1]["teks"] = "Subscribe ya!"
-    # 3) batasi banding (director suka maksa 'X vs SUHU' berulang) → max 1; sisanya jadi sorot komposisi
+    recipe_bg = ("roket", "orbit", "siang_malam", "bayangan_hujan", "hujan", "presenter")
+    for i in range(1, n):
+        s = spec[i]
+        # BG GANTI per bait: ikut topik kalimatnya kalau jelas (recipe punya bg sendiri)
+        if s.get("tipe") not in recipe_bg:
+            kb = _keyword_bg_spesifik(baris[i])
+            if kb:
+                s["bg"] = kb
+        # banding CUMA kalau kalimat beneran membandingkan; kalau nggak → sorot komposisi
+        if s.get("tipe") == "banding" and not _KATA_BANDING.search(baris[i] or ""):
+            spec[i] = _jadi_sorot(s, i, baris[i])
+    # banding yang tersisa: max 1 (sisanya sorot)
     bcount = 0
     for i in range(1, n):
         if spec[i].get("tipe") == "banding":
             bcount += 1
             if bcount > 1:
-                ki = spec[i].get("kiri") if spec[i].get("kiri") in ASET else "lampu"
-                ka = spec[i].get("kanan") if spec[i].get("kanan") in ASET else None
-                spec[i] = {"tipe": "sorot", "aset": ki, "elemen": ([ka] if ka and ka != ki else []),
-                           "label": _ASET_LABEL.get(ki, ki.upper()), "bg": spec[i].get("bg", "sains"), "var": spec[i].get("var", i)}
-    # 4) dedup: 2 adegan beruntun yang sama → variasikan yang ke-2
+                spec[i] = _jadi_sorot(spec[i], i, baris[i])
+    # label 'sorot' bersih (bukan gabungan nama aset / '+' / kepanjangan)
+    for s in spec:
+        if s.get("tipe") == "sorot":
+            lab, aset = (s.get("label") or "").strip(), s.get("aset", "lampu")
+            if (not lab) or ("+" in lab) or (lab.lower() in keyset) or (lab.lower().replace(" ", "_") in keyset) or len(lab) > 16:
+                s["label"] = _ASET_LABEL.get(aset, aset.upper())
+    # maskot cuma di adegan TERAKHIR; maskot di tengah → sorot
+    for i in range(1, n - 1):
+        if spec[i].get("tipe") == "maskot":
+            s = _keyword_spec(baris[i])
+            s["bg"], s["var"] = spec[i].get("bg", "sains"), spec[i].get("var", i)
+            kb = _keyword_bg_spesifik(baris[i])
+            if kb:
+                s["bg"] = kb
+            spec[i] = s
+    if n and spec[-1].get("tipe") == "maskot":
+        tk = (spec[-1].get("teks") or "").strip()
+        if (not tk) or tk.lower() in keyset or tk.lower() in ("maskot", "") or len(tk) > 22:
+            spec[-1]["teks"] = "Subscribe ya!"
+    # dedup: 2 adegan 'sorot' beruntun aset sama → variasikan yang ke-2
     for i in range(1, n):
         a, b = spec[i - 1], spec[i]
         if a.get("tipe") == b.get("tipe") == "sorot" and a.get("aset") == b.get("aset"):
             alt = _keyword_spec(baris[i]).get("aset")
             if alt and alt != b.get("aset"):
                 b["aset"], b["label"] = alt, _ASET_LABEL.get(alt, alt.upper())
-        elif a.get("tipe") == b.get("tipe") == "banding":   # banding beruntun → ke-2 jadi sorot
-            ki = b.get("kiri") if b.get("kiri") in ASET else "lampu"
-            spec[i] = {"tipe": "sorot", "aset": ki, "label": _ASET_LABEL.get(ki, ki.upper()),
-                       "bg": b.get("bg", "sains"), "var": b.get("var", i)}
     return spec
 
 
@@ -1291,12 +1334,15 @@ def sutradara(cfg, judul, baris, batal=None, log=print):
                "(biar adegan RAME & NYAMBUNG, bukan 1 objek; mis. 'matahari memanggang pasir panas' → aset:matahari, "
                "elemen:[panas,termometer]). 'banding' WAJIB 'kiri'+'kanan' DUA aset BEDA; 'foto' WAJIB 'query' "
                "Inggris spesifik. Aset dari daftar ini saja: " + ", ".join(keys) + ".\n"
-               "VARIASI: jangan ngulang 'banding'/'maskot' berturut-turut; mayoritas 'sorot' dengan aset BEDA-BEDA; "
-               "pakai 'foto' hemat (1-3x/video, buat establishing shot). Kalau NGGAK ADA aset yang pas buat subjek, "
-               "pakai 'foto' (query real) — JANGAN maksa aset yang salah makna (mis. jangan 'bumi' buat gunung).\n"
+               "VARIASI: 'banding' CUMA kalau kalimat BENERAN membandingkan dua hal (ada 'vs/dibanding/berbeda/"
+               "sebaliknya'); kalau nggak, pakai 'sorot'. Mayoritas 'sorot' aset BEDA-BEDA. "
+               "Pakai 'foto' SERING: tiap kalimat yang nyebut TEMPAT/HEWAN/BENDA NYATA spesifik (mis. gurun Atacama, "
+               "unta, aurora, Mars, pegunungan) → 'foto' pakai footage/foto ASLI dari internet (lebih nyata & menarik). "
+               "JANGAN maksa aset yang salah makna.\n"
                "'label' = 1-2 kata HURUF BESAR, kata PALING SPESIFIK dari kalimat (mis. 'UNTA', 'HELIUM', 'VENUS'). "
                "JANGAN pakai nama aset sebagai label (jangan 'HEWAN'/'TETES_AIR').\n"
-               "'bg_utama' = tema latar UTAMA video (konsisten) dari: " + ", ".join(tema_keys) + " "
+               "'bg' tiap adegan = tema sesuai topik KALIMAT ITU (boleh beda tiap adegan). "
+               "'bg_utama' = tema dominan video, dari: " + ", ".join(tema_keys) + " "
                "(angkasa=ruang/planet, gurun=pasir, langit=awan/udara, laut=air/laut, hijau=alam/hutan, "
                "malam, sains=netral/fisika/kimia, tubuh=biologi/organ). Tiap adegan boleh kasih 'bg' sendiri "
                "kalau beda jauh, kalau nggak kosongkan (ikut bg_utama).\n"

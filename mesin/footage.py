@@ -1305,6 +1305,29 @@ _BUKAN_INTI = {"foto", "photo", "gambar", "image", "lukisan", "painting", "prose
                "teori", "theory", "theories", "konspirasi", "conspiracy", "misteri", "mystery", "legenda", "legend"}
 
 
+# --- Guard anakronistik: topik pra-modern (sejarah) jangan pakai footage modern (kereta api, mobil, lab, komputer).
+#     ERA diset per-proyek di proyek.l_footage/l_render dari naskah+judul; "" = tanpa batasan era.
+ERA = ""
+_ERA_SEJARAH = re.compile(
+    r"abad ke-([1-9]|1[0-8])\b"                       # abad 1..18 = pra-modern (abad 19+ tak dihitung)
+    r"|\b\d{1,4}\s*(?:sm|sebelum masehi)\b"
+    r"|\b(kuno|purba|klasik|abad pertengahan|zaman dahulu|zaman dulu|peradaban|"
+    r"pra-?modern|prasejarah|dinasti|kesultanan|kekhalifahan|mesopotamia|babilonia)\b",
+    re.I)
+_ANAKRONISTIK = re.compile(
+    r"\b(kereta api|kereta uap|lokomotif|rel kereta|mobil|sepeda motor|motor|truk|bus|"
+    r"pesawat|helikopter|jet|komputer|laptop|ponsel|smartphone|handphone|layar digital|"
+    r"monitor|televisi|laboratorium|lab modern|jas lab|jas putih|sarung tangan|tabung reaksi|"
+    r"labu kimia|labu erlenmeyer|gelas kimia|mikroskop|pabrik|mesin industri|kota modern|"
+    r"gedung pencakar|neon|jalan raya|lalu lintas)\b",
+    re.I)
+
+
+def deteksi_era(teks):
+    """'sejarah' kalau topik pra-modern (abad<=18 / SM / kuno / dinasti...), selain itu ''."""
+    return "sejarah" if _ERA_SEJARAH.search(teks or "") else ""
+
+
 def batasi_skor(skor, isi, k, narasi="", lihat="", subjek="", alias=""):
     """Batas skor dari kode, karena gemma sering menulis isi foto dengan benar tapi tetap memberi skor tinggi:
     - foto latihan/simulasi/replika (padahal adegannya tentang peristiwa aslinya): maksimal 4;
@@ -1325,6 +1348,10 @@ def batasi_skor(skor, isi, k, narasi="", lihat="", subjek="", alias=""):
     isi_awal = " ".join((isi or "").split()[:3])
     if (_ORANG_ISI.search(isi_awal) or _ORANG_JUDUL.search(f"{k.get('judul') or ''} {k.get('teks') or ''}")) \
             and not _NARASI_ORANG.search(adegan):
+        skor = min(skor, 3)
+    # Topik sejarah (pra-modern): footage modern/anakronistik (kereta api, mobil, lab, komputer) tak nyambung -> maks 3,
+    # kecuali adegannya memang membahas yang modern ("peneliti modern mempelajari karya ...").
+    if ERA == "sejarah" and _ANAKRONISTIK.search(isi or "") and not _ANAKRONISTIK.search(adegan):
         skor = min(skor, 3)
     inti = [w for w in re.findall(r"\w+", (subjek or "").lower()) if len(w) >= 3 and w not in _BUKAN_INTI]
     if inti and alias:

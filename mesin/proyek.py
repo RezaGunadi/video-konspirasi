@@ -1581,6 +1581,7 @@ def _render_animasi(p, cfg, batal):
 def l_footage(p, cfg, batal):
     o = p["opsi"]
     footage.MODE_VISUAL = "fakta" if _fakta(p) else "misteri"
+    footage.ERA = footage.deteksi_era(f"{p.get('judul') or ''} {o.get('teks') or ''} {(p.get('naskah') or '')[:2500]}")
     if _animasi(p):
         return _footage_animasi(p, cfg, batal)
     n = len(p["adegan"])
@@ -1867,6 +1868,7 @@ def _teks_layar(p, ada_hook):
 def l_render(p, cfg, batal):
     o = p["opsi"]
     footage.MODE_VISUAL = "fakta" if _fakta(p) else "misteri"
+    footage.ERA = footage.deteksi_era(f"{p.get('judul') or ''} {o.get('teks') or ''} {(p.get('naskah') or '')[:2500]}")
     if _animasi(p):
         return _render_animasi(p, cfg, batal)
     kerja = PROYEK / p["id"] / "render"

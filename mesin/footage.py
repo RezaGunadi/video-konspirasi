@@ -1822,28 +1822,38 @@ def detik_hitam(f, mulai=0.0, durasi=None):
 POLLINATIONS = "https://image.pollinations.ai/prompt/"
 _GAYA_GEN = ("photorealistic, cinematic documentary still, natural lighting, highly detailed, sharp focus, "
              "no text, no caption, no watermark, no logo")
+# Topik pra-modern (ERA=sejarah): gambar AI bergaya ilustrasi/manuskrip zaman itu, BUKAN foto modern, supaya
+# adegan sejarah tidak kemasukan benda anakronistik (mobil, listrik, lab, kereta) dari model foto.
+_GAYA_GEN_SEJARAH = ("in the style of an antique illuminated manuscript illustration and old engraving, "
+                     "period-accurate historical art, aged parchment, ink and watercolor, no modern objects, "
+                     "no electricity, no cars, no photography, no text, no caption, no watermark, no logo")
 
 
 def gen_gambar(prompt, format_video, batal=None, log=print):
     """Buat satu gambar ilustrasi lewat Pollinations.ai (gratis, tanpa API key) untuk adegan yang tidak punya
-    footage stok yang cocok, supaya tidak jatuh ke gambar off-topic. Gambar diunduh ke cache aset dengan nama yang
-    SAMA seperti yang nanti dicari siapkan(), jadi tidak diunduh dua kali. Ringan (satu permintaan HTTP, tidak butuh
-    GPU lokal). Mengembalikan kandidat ber-skor tinggi, atau None kalau gagal."""
+    footage stok yang cocok, supaya tidak jatuh ke gambar off-topic. Gaya ikut ERA: topik sejarah -> manuskrip
+    zaman itu (bukan foto modern). Gambar diunduh ke cache aset dengan nama yang SAMA seperti yang nanti dicari
+    siapkan(), jadi tidak diunduh dua kali. Mengembalikan kandidat ber-skor tinggi, atau None kalau gagal."""
     prompt = " ".join((prompt or "").split())
     if len(prompt) < 4:
         return None
+    gaya = _GAYA_GEN_SEJARAH if ERA == "sejarah" else _GAYA_GEN
     w, h = (1080, 1920) if format_video == "9:16" else (1920, 1080)
-    kid = f"gen-{hash_pendek(prompt + format_video)}"
-    url = (POLLINATIONS + quote(f"{prompt}, {_GAYA_GEN}"[:400]) +
-           f"?width={w}&height={h}&nologo=true&model=flux&seed={int(hash_pendek(prompt), 16) % 100000}")
+    kid = f"gen-{hash_pendek(prompt + format_video + ERA)}"
     tujuan = F_ASET / f"{hash_pendek(kid)}.img"   # nama berkas yang dicari siapkan() untuk kandidat ini
-    try:
-        f = unduh(url, tujuan, batas_mb=12, batal=batal)
-    except Dibatalkan:
-        raise
-    except Exception as e:
-        log(f"  Generate gambar gagal: {e}")
-        return None
+    url, f = "", None
+    for percobaan in range(2):   # Pollinations kadang gagal unduh sekali -> coba lagi dgn seed beda
+        seed = (int(hash_pendek(prompt), 16) + percobaan * 7919) % 100000
+        url = (POLLINATIONS + quote(f"{prompt}, {gaya}"[:400]) +
+               f"?width={w}&height={h}&nologo=true&model=flux&seed={seed}")
+        try:
+            f = unduh(url, tujuan, batas_mb=12, batal=batal)
+        except Dibatalkan:
+            raise
+        except Exception as e:
+            log(f"  Generate gambar gagal: {e}"); f = None
+        if f:
+            break
     if not f:
         log("  Generate gambar gagal (tidak terunduh)")
         return None

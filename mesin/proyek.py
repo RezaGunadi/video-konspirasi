@@ -1443,6 +1443,10 @@ def _gambar_ai_jika_perlu(p, a, o, batal):
     prompt = (q.get("lihat") or q.get("a") or " ".join(x for x in (q.get("subjek"), q.get("b")) if x)).strip()
     if not prompt:
         return  # adegan abstrak tanpa target visual: biarkan jadi latar saja
+    if footage.ERA == "sejarah":
+        subj = _subjek(p) or (p.get("meta") or {}).get("judul") or ""
+        if subj and subj.lower() not in prompt.lower():
+            prompt = f"{subj}: {prompt}"   # jangkar subjek sejarah biar ilustrasi AI on-topic & sezaman
     g = footage.gen_gambar(prompt, o["format"], batal=batal, log=lambda t: log(p, t))
     if g:
         a["kandidat"] = ([g] + kand)[:22]

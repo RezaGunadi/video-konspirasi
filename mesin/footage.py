@@ -1319,7 +1319,22 @@ _ANAKRONISTIK = re.compile(
     r"pesawat|helikopter|jet|komputer|laptop|ponsel|smartphone|handphone|layar digital|"
     r"monitor|televisi|laboratorium|lab modern|jas lab|jas putih|sarung tangan|tabung reaksi|"
     r"labu kimia|labu erlenmeyer|gelas kimia|mikroskop|pabrik|mesin industri|kota modern|"
-    r"gedung pencakar|neon|jalan raya|lalu lintas)\b",
+    r"gedung pencakar|neon|jalan raya|lalu lintas|"
+    # penanda INDUSTRI/ELEKTRONIK modern (stok mesin modern yg lolos dari daftar lama -> shot stainless+rambu bahaya):
+    r"stainless|baja nirkarat|logam mengkilap|logam berkilau|krom|rambu bahaya|tanda bahaya|"
+    r"tanda peringatan|segitiga kuning|hazard|cnc|konveyor|ban berjalan|robot industri|"
+    r"lengan robotik|lengan robot|otomasi|automasi|mesin modern|peralatan modern|pabrik modern|"
+    r"plastik|kabel listrik|panel kontrol|layar sentuh|lampu led|generator listrik|"
+    r"pompa listrik|dinamo|turbin modern|eskalator)\b",
+    re.I)
+# Versi Inggris -> dicek pada JUDUL/TAG stok (Pexels/Mixkit/Pixabay berbahasa Inggris), bukan isi juru-nilai (Indonesia).
+# Stok "stainless steel factory / industrial automation / robotic arm" lolos guard ID karena tag-nya tak pernah dicek.
+_ANAKRONISTIK_EN = re.compile(
+    r"\b(stainless steel|industrial|factory|conveyor|assembly line|robot arm|robotic arm|"
+    r"robotic|automation|automated machine|cnc|forklift|control panel|touchscreen|circuit board|"
+    r"wiring|plastic|hazard|warning sign|locomotive|steam engine|railway|railroad|automobile|"
+    r"\btruck\b|airplane|aircraft|helicopter|laboratory|lab coat|microscope|test tube|beaker|"
+    r"skyscraper|highway|freeway|smartphone|\blaptop\b|computer monitor|neon sign|power plant)\b",
     re.I)
 
 
@@ -1352,6 +1367,9 @@ def batasi_skor(skor, isi, k, narasi="", lihat="", subjek="", alias=""):
     # Topik sejarah (pra-modern): footage modern/anakronistik (kereta api, mobil, lab, komputer) tak nyambung -> maks 3,
     # kecuali adegannya memang membahas yang modern ("peneliti modern mempelajari karya ...").
     if ERA == "sejarah" and _ANAKRONISTIK.search(isi or "") and not _ANAKRONISTIK.search(adegan):
+        skor = min(skor, 3)
+    # Tag/judul stok berbahasa Inggris (stainless steel/industrial/factory/robotic arm) tak kena guard ID di atas.
+    if ERA == "sejarah" and _ANAKRONISTIK_EN.search(f"{k.get('judul') or ''} {k.get('teks') or ''}"):
         skor = min(skor, 3)
     inti = [w for w in re.findall(r"\w+", (subjek or "").lower()) if len(w) >= 3 and w not in _BUKAN_INTI]
     if inti and alias:

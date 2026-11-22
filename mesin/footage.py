@@ -1847,11 +1847,55 @@ _GAYA_GEN_SEJARAH = ("in the style of an antique illuminated manuscript illustra
                      "no electricity, no cars, no photography, no text, no caption, no watermark, no logo")
 
 
+_GEN_URL = None
+def _gen_url():
+    """Endpoint server gambar AI dari config (gen_url). Dibaca sekali lalu di-cache (ganti config -> restart)."""
+    global _GEN_URL
+    if _GEN_URL is None:
+        try:
+            from . import config
+            _GEN_URL = (config.muat().get("gen_url") or "").strip().rstrip("/")
+        except Exception:
+            _GEN_URL = ""
+    return _GEN_URL
+
+
+def _unduh_gen(url, tujuan, batal=None, timeout_detik=900):
+    """Unduh dari server gambar lokal yang BOLEH lambat (SD generate butuh menit) — timeout jauh lebih longgar
+    dari unduh() (60 dtk). Stream ke file atomic, hormati tombol Batal. None kalau gagal/balasan kosong."""
+    tujuan = Path(tujuan)
+    if tujuan.exists() and tujuan.stat().st_size > 0:
+        return tujuan
+    sementara = tujuan.with_suffix(tujuan.suffix + ".part")
+    try:
+        r = requests.get(url, stream=True, timeout=(10, timeout_detik))
+        with r:
+            if r.status_code != 200:
+                return None
+            with open(sementara, "wb") as fp:
+                for blok in r.iter_content(1 << 16):
+                    if batal:
+                        batal.cek()
+                    fp.write(blok)
+        if sementara.stat().st_size < 1000:      # balasan error/kosong, bukan gambar
+            sementara.unlink(missing_ok=True)
+            return None
+        sementara.replace(tujuan)
+        return tujuan
+    except Dibatalkan:
+        sementara.unlink(missing_ok=True)
+        raise
+    except Exception:
+        sementara.unlink(missing_ok=True)
+        return None
+
+
 def gen_gambar(prompt, format_video, batal=None, log=print):
-    """Buat satu gambar ilustrasi lewat Pollinations.ai (gratis, tanpa API key) untuk adegan yang tidak punya
-    footage stok yang cocok, supaya tidak jatuh ke gambar off-topic. Gaya ikut ERA: topik sejarah -> manuskrip
-    zaman itu (bukan foto modern). Gambar diunduh ke cache aset dengan nama yang SAMA seperti yang nanti dicari
-    siapkan(), jadi tidak diunduh dua kali. Mengembalikan kandidat ber-skor tinggi, atau None kalau gagal."""
+    """Buat satu gambar ilustrasi untuk adegan yang tak punya footage stok cocok, supaya tidak jatuh ke gambar
+    off-topic. Sumber: server gambar AI dari config 'gen_url' (SD di laptop ber-GPU / proxy cloud; kualitas
+    terkontrol) kalau diisi; kalau kosong -> Pollinations lama (sering mati) sebagai cadangan. Gaya ikut ERA:
+    topik sejarah -> manuskrip sezaman (bukan foto modern). Gambar diunduh ke cache aset dengan nama yang SAMA
+    seperti yang dicari siapkan(), jadi tak diunduh dua kali. Kembalikan kandidat ber-skor tinggi, atau None."""
     prompt = " ".join((prompt or "").split())
     if len(prompt) < 4:
         return None
@@ -1859,13 +1903,19 @@ def gen_gambar(prompt, format_video, batal=None, log=print):
     w, h = (1080, 1920) if format_video == "9:16" else (1920, 1080)
     kid = f"gen-{hash_pendek(prompt + format_video + ERA)}"
     tujuan = F_ASET / f"{hash_pendek(kid)}.img"   # nama berkas yang dicari siapkan() untuk kandidat ini
+    full = f"{prompt}, {gaya}"[:400]
+    server = _gen_url()
     url, f = "", None
-    for percobaan in range(2):   # Pollinations kadang gagal unduh sekali -> coba lagi dgn seed beda
+    for percobaan in range(2):   # kadang gagal sekali -> coba lagi dgn seed beda
         seed = (int(hash_pendek(prompt), 16) + percobaan * 7919) % 100000
-        url = (POLLINATIONS + quote(f"{prompt}, {gaya}"[:400]) +
-               f"?width={w}&height={h}&nologo=true&model=flux&seed={seed}")
         try:
-            f = unduh(url, tujuan, batas_mb=12, batal=batal)
+            if server:           # server SD lokal/cloud (boleh lambat): fetch timeout longgar
+                url = server + "/gen?" + urlencode({"prompt": full, "w": w, "h": h, "seed": seed})
+                f = _unduh_gen(url, tujuan, batal=batal)
+            else:                # cadangan: Pollinations lama
+                url = (POLLINATIONS + quote(full) +
+                       f"?width={w}&height={h}&nologo=true&model=flux&seed={seed}")
+                f = unduh(url, tujuan, batas_mb=12, batal=batal)
         except Dibatalkan:
             raise
         except Exception as e:
@@ -1881,11 +1931,12 @@ def gen_gambar(prompt, format_video, batal=None, log=print):
         return None
     if not info["video"] or info["lebar"] < 300:
         return None
-    log(f"  🎨 Gambar AI dibuat: “{prompt[:60]}”")
-    return {"id": kid, "sumber": "AI (Pollinations)", "jenis": "gambar", "url": url, "file_lokal": str(f),
+    asal = "server lokal" if server else "Pollinations"
+    log(f"  🎨 Gambar AI dibuat ({asal}): “{prompt[:56]}”")
+    return {"id": kid, "sumber": f"AI ({asal})", "jenis": "gambar", "url": url, "file_lokal": str(f),
             "thumb": url, "teks": prompt[:200], "judul": prompt[:120], "isi_ai": prompt[:120],
-            "lebar": info["lebar"], "tinggi": info["tinggi"], "lisensi": "AI-generated (Pollinations, flux)",
-            "pembuat": "Pollinations.ai", "halaman": "https://pollinations.ai",
+            "lebar": info["lebar"], "tinggi": info["tinggi"], "lisensi": f"AI-generated ({asal})",
+            "pembuat": asal, "halaman": server or "https://pollinations.ai",
             "skor_ai": SKOR_BAGUS + 1, "skor_latar": LATAR_BAGUS, "gen": True}
 
 

@@ -14,6 +14,11 @@ BAWAAN = {
     "model": "sosmed-ai",
     "pexels_key": "",
     "pixabay_key": "",
+    # Endpoint HTTP pembuat gambar AI untuk fallback footage (adegan tanpa stok cocok). Kosong = pakai
+    # Pollinations lama (sering mati). Isi -> mis. "http://192.168.x.x:7870" (server SD lokal di laptop
+    # ber-GPU) atau proxy cloud. Mini PC tanpa GPU cukup panggil HTTP. Lihat mesin_gambar_server.py.
+    # 192.168.100.11:7870 = server SD di laptop ber-GPU (GTX 1650Ti). Mini PC (.63/.54/.71) panggil ini.
+    "gen_url": "http://192.168.100.11:7870",
     "pantau_input": True,  # file .txt di folder input/ otomatis diproses
     # Maksimal putaran AI menilai gambar per adegan (0 = otomatis: 3 di mode video, 4 di klasik). Mini PC tanpa GPU: 2.
     "putaran_gambar": 0,

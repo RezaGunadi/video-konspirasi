@@ -30,6 +30,7 @@ def pipe():
     if _PIPE is None:
         from diffusers import StableDiffusionPipeline
         log("load SD (dreamshaper-8)…")
+        # fp32: GTX 16xx menghasilkan NaN/hitam di fp16 (bahkan dgn VAE upcast) -> wajib fp32. Lambat tapi benar.
         p = StableDiffusionPipeline.from_pretrained(
             "Lykon/dreamshaper-8", torch_dtype=torch.float32, safety_checker=None, requires_safety_checker=False)
         p = p.to("cuda")

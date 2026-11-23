@@ -107,6 +107,16 @@ def cek_orang():
     return jsonify(ok=True, **ck.status())
 
 
+@app.get("/api/cek-orang-img")
+def cek_orang_img():
+    """Serve gambar-AI yg di-flag (buat verifikasi visual): ?pid=..&adegan=.. ."""
+    from mesin import cek_orang as ck
+    fp = ck.gambar_adegan(request.args.get("pid", ""), int(request.args.get("adegan", -1)))
+    if not fp:
+        abort(404)
+    return send_file(fp, mimetype="image/jpeg")
+
+
 def _buat_dari_teks(teks, opsi, per_baris, nama=None):
     if per_baris:
         baris = [b.strip(" -•\t") for b in teks.splitlines() if b.strip(" -•\t")]

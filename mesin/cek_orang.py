@@ -89,6 +89,33 @@ def _scan():
             _state["galat"] = repr(e)[:200]
 
 
+def gambar_adegan(pid, ai):
+    """Path file gambar-AI yg DIPAKAI (pilih/stiker) di adegan ke-ai proyek pid — buat verifikasi
+    visual hasil scan. None kalau tak ada / file hilang."""
+    with proyek._lock:
+        p = proyek._proyek.get(pid)
+        if not p:
+            return None
+        adegan = p.get("adegan") or []
+        if not (0 <= ai < len(adegan)):
+            return None
+        a = adegan[ai]
+        kand = a.get("kandidat") or []
+        idxs = []
+        for s in a.get("shots") or []:
+            for key in ("pilih", "stiker"):
+                if s.get(key) is not None:
+                    idxs.append(s[key])
+        for idx in idxs:
+            if 0 <= idx < len(kand):
+                k = kand[idx]
+                if k.get("jenis") == "gambar" and str(k.get("sumber") or "").startswith("AI"):
+                    fp = k.get("file_lokal")
+                    if fp and os.path.exists(fp):
+                        return fp
+    return None
+
+
 def mulai():
     with _slock:
         if _state["status"] == "jalan":

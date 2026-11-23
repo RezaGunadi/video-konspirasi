@@ -1838,6 +1838,7 @@ def detik_hitam(f, mulai=0.0, durasi=None):
 
 
 POLLINATIONS = "https://image.pollinations.ai/prompt/"
+GEN_VER = "v2-noorang"   # naikkan kalau aturan gen gambar berubah -> cache lama di-regen bersih
 _GAYA_GEN = ("photorealistic, cinematic documentary still, natural lighting, highly detailed, sharp focus, "
              "no text, no caption, no watermark, no logo")
 # Topik pra-modern (ERA=sejarah): gambar AI bergaya ilustrasi/manuskrip zaman itu, BUKAN foto modern, supaya
@@ -1901,7 +1902,9 @@ def gen_gambar(prompt, format_video, batal=None, log=print, izinkan_orang=False)
         return None
     gaya = _GAYA_GEN_SEJARAH if ERA == "sejarah" else _GAYA_GEN
     w, h = (1080, 1920) if format_video == "9:16" else (1920, 1080)
-    kid = f"gen-{hash_pendek(prompt + format_video + ERA)}"
+    # GEN_VER dinaikkan saat aturan gen berubah (mis. anti-orang) -> cache gambar lama jadi miss, digen ulang
+    # bersih lewat server baru. 'o'/'x' = boleh/larang orang supaya 2 adegan prompt sama tak tabrakan cache.
+    kid = f"gen-{hash_pendek(prompt + format_video + ERA + GEN_VER + ('o' if izinkan_orang else 'x'))}"
     tujuan = F_ASET / f"{hash_pendek(kid)}.img"   # nama berkas yang dicari siapkan() untuk kandidat ini
     full = f"{prompt}, {gaya}"[:400]
     # Topik yang BUKAN tentang manusia: larang keras gambar orang (dreamshaper suka nyelipin potret walau

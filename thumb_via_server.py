@@ -30,6 +30,16 @@ def main():
         try:
             bg = ambil(prompt, w, h, seed=(abs(hash(vid)) % 1000))
             overlay(bg, it["hook"], OUTDIR / f"{vid}.jpg", w, h)
+            # file baru digenerate -> copot dari daftar 'done' biar set_thumbs pasang ulang (anti live-basi)
+            try:
+                sf = OUTDIR.parent / "thumbs_set.json"
+                if sf.exists():
+                    done = json.loads(sf.read_text(encoding="utf-8"))
+                    if vid in done:
+                        done = [x for x in done if x != vid]
+                        sf.write_text(json.dumps(done, ensure_ascii=False), encoding="utf-8")
+            except Exception:
+                pass
             ok += 1
             print(f"[{i}/{len(todo)}] {vid} ({int(time.time()-t0)}s) -> {it['hook']}", flush=True)
         except Exception as e:

@@ -1890,7 +1890,7 @@ def _unduh_gen(url, tujuan, batal=None, timeout_detik=900):
         return None
 
 
-def gen_gambar(prompt, format_video, batal=None, log=print):
+def gen_gambar(prompt, format_video, batal=None, log=print, izinkan_orang=False):
     """Buat satu gambar ilustrasi untuk adegan yang tak punya footage stok cocok, supaya tidak jatuh ke gambar
     off-topic. Sumber: server gambar AI dari config 'gen_url' (SD di laptop ber-GPU / proxy cloud; kualitas
     terkontrol) kalau diisi; kalau kosong -> Pollinations lama (sering mati) sebagai cadangan. Gaya ikut ERA:
@@ -1904,13 +1904,21 @@ def gen_gambar(prompt, format_video, batal=None, log=print):
     kid = f"gen-{hash_pendek(prompt + format_video + ERA)}"
     tujuan = F_ASET / f"{hash_pendek(kid)}.img"   # nama berkas yang dicari siapkan() untuk kandidat ini
     full = f"{prompt}, {gaya}"[:400]
+    # Topik yang BUKAN tentang manusia: larang keras gambar orang (dreamshaper suka nyelipin potret walau
+    # diminta pemandangan — mis. "night sky" -> muka anak). Server pakai negative prompt; Pollinations tak
+    # punya negative lewat URL, jadi larangan ditempel ke prompt positif.
+    if not izinkan_orang:
+        full = f"{prompt}, empty scene no people no person, {gaya}"[:400]
     server = _gen_url()
     url, f = "", None
     for percobaan in range(2):   # kadang gagal sekali -> coba lagi dgn seed beda
         seed = (int(hash_pendek(prompt), 16) + percobaan * 7919) % 100000
         try:
             if server:           # server SD lokal/cloud (boleh lambat): fetch timeout longgar
-                url = server + "/gen?" + urlencode({"prompt": full, "w": w, "h": h, "seed": seed})
+                qs = {"prompt": full, "w": w, "h": h, "seed": seed}
+                if izinkan_orang:
+                    qs["people"] = 1
+                url = server + "/gen?" + urlencode(qs)
                 f = _unduh_gen(url, tujuan, batal=batal)
             else:                # cadangan: Pollinations lama
                 url = (POLLINATIONS + quote(full) +

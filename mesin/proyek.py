@@ -1447,7 +1447,12 @@ def _gambar_ai_jika_perlu(p, a, o, batal):
         subj = _subjek(p) or (p.get("meta") or {}).get("judul") or ""
         if subj and subj.lower() not in prompt.lower():
             prompt = f"{subj}: {prompt}"   # jangkar subjek sejarah biar ilustrasi AI on-topic & sezaman
-    g = footage.gen_gambar(prompt, o["format"], batal=batal, log=lambda t: log(p, t))
+    # Hanya izinkan gambar AI berisi ORANG kalau adegan/topik memang membahas manusia; selain itu larang keras
+    # (dreamshaper suka nyelipin potret: "night sky" -> muka anak, "ocean exploration" -> cewek random).
+    konteks_orang = f"{a.get('teks', '')} {prompt} {(p.get('meta') or {}).get('judul', '')}"
+    izinkan_orang = bool(footage._NARASI_ORANG.search(konteks_orang))
+    g = footage.gen_gambar(prompt, o["format"], batal=batal, log=lambda t: log(p, t),
+                           izinkan_orang=izinkan_orang)
     if g:
         a["kandidat"] = ([g] + kand)[:22]
 

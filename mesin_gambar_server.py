@@ -25,6 +25,12 @@ from PIL import Image
 
 NEG = ("text, watermark, logo, caption, blurry, low quality, deformed, split image, collage, "
        "frame, border, nsfw")
+# dreamshaper doyan bikin potret orang walau diminta pemandangan ("night sky" -> muka anak).
+# Default: larang orang keras. Boleh orang hanya kalau request kirim people=1 (topik yg memang soal manusia).
+NEG_ORANG = (", person, people, human, man, woman, girl, boy, child, kid, baby, face, portrait, "
+             "headshot, crowd, human figure, selfie, model posing")
+# Dorongan positif biar isinya lingkungan/benda, bukan tokoh.
+POS_TANPA_ORANG = ", empty scene, scenery, landscape, environment, uninhabited, no people"
 
 _PIPE = None
 _LOCK = threading.Lock()                 # 1 GPU -> gen di-serialize
@@ -80,15 +86,18 @@ def _b8(n):
     return max(256, (int(n) // 8) * 8)
 
 
-def gen(prompt, w, h, seed):
+def gen(prompt, w, h, seed, people=False):
     ar = w / h
     base = 640
     if ar >= 1:
         gw, gh = base, base / ar
     else:
         gw, gh = base * ar, base
+    neg = NEG if people else (NEG + NEG_ORANG)
+    if not people:
+        prompt = (prompt + POS_TANPA_ORANG)[:400]
     g = torch.Generator("cuda").manual_seed(int(seed) % (2 ** 31))
-    img = pipe()(prompt, negative_prompt=NEG, num_inference_steps=ARGS.steps,
+    img = pipe()(prompt, negative_prompt=neg, num_inference_steps=ARGS.steps,
                  guidance_scale=6.5, width=_b8(gw), height=_b8(gh), generator=g).images[0]
     s = max(w / img.width, h / img.height)        # cover-crop ke rasio minta
     img = img.resize((max(w, int(img.width * s)), max(h, int(img.height * s))), Image.LANCZOS)
@@ -115,10 +124,11 @@ class H(BaseHTTPRequestHandler):
         h = max(256, min(1920, int(q.get("h", ["1920"])[0] or 1920)))
         seed = int(q.get("seed", ["0"])[0] or 0)
         prio = (q.get("prio", ["0"])[0] or "0") not in ("0", "", "false")
+        people = (q.get("people", ["0"])[0] or "0") not in ("0", "", "false")
         t0 = time.time()
         _masuk_gpu(prio)
         try:
-            data = gen(prompt, w, h, seed)
+            data = gen(prompt, w, h, seed, people=people)
         except Exception as e:
             print("GAGAL:", repr(e)[:160], flush=True)
             try: self.send_response(500); self.end_headers()

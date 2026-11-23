@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import sys
+import threading
 from pathlib import Path
 
 from flask import Flask, abort, jsonify, request, send_file, send_from_directory
@@ -96,6 +97,16 @@ def daftar():
     return jsonify(ok=True, proyek=proyek.daftar())
 
 
+@app.get("/api/cek-orang")
+def cek_orang():
+    """Scan proyek selesai utk stiker gambar-AI berwajah orang di adegan non-manusia (bug lama).
+    ?mulai=1 memulai scan latar; tanpa itu mengembalikan progres+hasil. Beban face-detect per mini PC."""
+    from mesin import cek_orang as ck
+    if request.args.get("mulai"):
+        return jsonify(ok=True, **ck.mulai())
+    return jsonify(ok=True, **ck.status())
+
+
 def _buat_dari_teks(teks, opsi, per_baris, nama=None):
     if per_baris:
         baris = [b.strip(" -•\t") for b in teks.splitlines() if b.strip(" -•\t")]
@@ -172,6 +183,54 @@ def editfolder_buat():
     return jsonify(ok=True, id=p["id"], jumlah=n)
 
 
+@app.post("/api/editfolder-path")
+def editfolder_path():
+    """Edit-folder dari folder lokal (mis. E:\\dji\\...) tanpa upload/salin — folder puluhan GB tidak menggandakan disk."""
+    data = request.get_json(force=True) or {}
+    folder = Path(str(data.get("path") or "").strip().strip('"'))
+    if not folder.is_dir():
+        abort(400, f"Folder tidak ditemukan: {folder}")
+    ekst = (".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v")
+    n = sum(1 for x in folder.iterdir() if x.suffix.lower() in ekst)
+    if not n:
+        abort(400, "Folder tidak berisi video")
+    judul = str(data.get("judul") or "").strip() or folder.name
+    p = proyek.buat_editfolder(str(folder), judul, bool(data.get("tutup_broll", True)), data.get("opsi") or {})
+    return jsonify(ok=True, id=p["id"], jumlah=n)
+
+
+_belajar = {"jalan": False, "pesan": ""}
+
+
+@app.route("/api/belajar-edit", methods=["GET", "POST"])
+def belajar_edit():
+    """Pelajari koreksi user (folder mentah + video AI + video koreksi) -> profil gaya Edit-folder."""
+    if request.method == "GET":
+        return jsonify(ok=True, **_belajar)
+    if _belajar["jalan"]:
+        abort(409, "Masih belajar dari koreksi sebelumnya")
+    d = request.get_json(force=True) or {}
+    folder, vai, vus = (str(d.get(k) or "").strip().strip('"') for k in ("folder", "video_ai", "video_user"))
+    if not Path(folder).is_dir() or not Path(vus).is_file() or (vai and not Path(vai).is_file()):
+        abort(400, "Path folder/video tidak ditemukan")
+
+    def kerja():
+        from mesin import belajar
+        try:
+            p = belajar.belajar_koreksi(folder, vai or None, vus, config.muat(),
+                                        log=lambda t: _belajar.update(pesan=str(t)[:300]))
+            _belajar["pesan"] = (f"✓ Selesai. Target simpan {p['rasio_target']*100:.0f}%, urutan {p['urutan']}, "
+                                 f"{len(p['aturan'])} aturan gaya tersimpan.")
+        except Exception as e:
+            _belajar["pesan"] = f"Gagal: {e}"
+        finally:
+            _belajar["jalan"] = False
+
+    _belajar.update(jalan=True, pesan="Mulai…")
+    threading.Thread(target=kerja, daemon=True).start()
+    return jsonify(ok=True)
+
+
 @app.post("/api/montase")
 def montase_buat():
     """Upload satu folder klip b-roll/drone (webkitdirectory) → proyek 'Montase highlight'."""
@@ -197,8 +256,18 @@ def montase_buat():
         n += 1
     if not n:
         abort(400, "Tidak ada file video yang didukung (mp4/mov/mkv/webm)")
+    # opsional: rekaman suara (narasi) → mode "sesuaikan ke rekaman" (footage ngikut panjang rekaman)
+    rek_path = None
+    rek = request.files.get("rekaman")
+    if rek and (rek.filename or "").strip():
+        aekst = (".mp3", ".m4a", ".aac", ".wav", ".ogg", ".opus", ".flac")
+        suf = Path(rek.filename).suffix.lower()
+        if suf not in aekst:
+            suf = ".mp3"
+        rek_path = tujuan / ("_rekaman" + suf)
+        rek.save(rek_path)
     opsi = json.loads(request.form.get("opsi") or "{}")
-    p = proyek.buat_montase(str(tujuan), judul, fmt, durasi, opsi)
+    p = proyek.buat_montase(str(tujuan), judul, fmt, durasi, opsi, rekaman=str(rek_path) if rek_path else None)
     return jsonify(ok=True, id=p["id"], jumlah=n)
 
 

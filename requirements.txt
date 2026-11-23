@@ -2,7 +2,7 @@ flask
 waitress
 edge-tts
 requests
-opencv-python-headless
+opencv-python-headless==4.10.0.84
 faster-whisper
 # Opsional — mode Re-create: menyamakan warna suara dengan video sumber (OpenVoice V2 di D:\tools\openvoice)
 # pip install --index-url https://download.pytorch.org/whl/cpu torch

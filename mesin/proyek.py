@@ -2394,8 +2394,8 @@ def _pekerja():
         with _lock:
             # Urut waktu MASUK antrean (bukan waktu dibuat): video lama yang dicari ulang footage-nya tidak
             # menyerobot reels yang sudah menunggu.
-            antri = sorted((p for p in _proyek.values() if p["status"] == "antri"),
-                           key=lambda p: (p.get("antri_sejak") or p["dibuat"], p["dibuat"]))
+            antri = sorted((p for p in _proyek.values() if p.get("status") == "antri"),
+                           key=lambda p: (p.get("antri_sejak") or p.get("dibuat") or 0, p.get("dibuat") or 0))
         if antri:
             kerjakan(antri[0])
             continue

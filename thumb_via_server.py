@@ -13,8 +13,8 @@ try: sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 except Exception: pass
 SRV = "http://127.0.0.1:7870/gen"
 
-def ambil(prompt, w, h, seed, timeout=1200):
-    url = SRV + "?" + urllib.parse.urlencode({"prompt": prompt, "w": w, "h": h, "seed": seed})
+def ambil(prompt, w, h, seed, timeout=1500):
+    url = SRV + "?" + urllib.parse.urlencode({"prompt": prompt, "w": w, "h": h, "seed": seed, "prio": 1})
     with urllib.request.urlopen(url, timeout=timeout) as r:
         return Image.open(io.BytesIO(r.read())).convert("RGB")
 

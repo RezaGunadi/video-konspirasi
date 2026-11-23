@@ -27,8 +27,35 @@ NEG = ("text, watermark, logo, caption, blurry, low quality, deformed, split ima
        "frame, border, nsfw")
 
 _PIPE = None
-_LOCK = threading.Lock()
+_LOCK = threading.Lock()                 # 1 GPU -> gen di-serialize
+_PRIO = threading.Condition()            # gerbang prioritas
+_prio_waiting = 0                        # jumlah request prioritas (thumbnail) yg sedang menunggu
 ARGS = None
+
+
+def _masuk_gpu(prio):
+    """Ambil GPU. prio=True (thumbnail) -> langsung; prio=False (footage) -> tunggu dulu kalau ada
+    request prioritas yg menunggu, biar thumbnail tak kelaparan saat 3 mini PC rebutan footage."""
+    global _prio_waiting
+    if prio:
+        with _PRIO:
+            _prio_waiting += 1
+    else:
+        with _PRIO:
+            while _prio_waiting > 0:
+                _PRIO.wait(timeout=2.0)
+    _LOCK.acquire()
+
+
+def _keluar_gpu(prio):
+    global _prio_waiting
+    _LOCK.release()
+    if prio:
+        with _PRIO:
+            _prio_waiting -= 1
+            if _prio_waiting <= 0:
+                _prio_waiting = 0
+                _PRIO.notify_all()
 
 
 def pipe():
@@ -87,16 +114,19 @@ class H(BaseHTTPRequestHandler):
         w = max(256, min(1920, int(q.get("w", ["1080"])[0] or 1080)))
         h = max(256, min(1920, int(q.get("h", ["1920"])[0] or 1920)))
         seed = int(q.get("seed", ["0"])[0] or 0)
+        prio = (q.get("prio", ["0"])[0] or "0") not in ("0", "", "false")
         t0 = time.time()
+        _masuk_gpu(prio)
         try:
-            with _LOCK:                            # satu GPU -> antre
-                data = gen(prompt, w, h, seed)
+            data = gen(prompt, w, h, seed)
         except Exception as e:
             print("GAGAL:", repr(e)[:160], flush=True)
             try: self.send_response(500); self.end_headers()
             except Exception: pass
             return
-        print(f"OK {int(time.time()-t0)}s {w}x{h} :: {prompt[:60]}", flush=True)
+        finally:
+            _keluar_gpu(prio)
+        print(f"OK {int(time.time()-t0)}s {w}x{h} {'[PRIO]' if prio else ''} :: {prompt[:60]}", flush=True)
         self.send_response(200)
         self.send_header("Content-Type", "image/jpeg")
         self.send_header("Content-Length", str(len(data)))
